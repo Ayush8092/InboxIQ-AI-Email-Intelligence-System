@@ -1,0 +1,142 @@
+[
+  {
+    "id": "email_001",
+    "subject": "Q3 Budget Report - Action Required by Friday",
+    "body": "Hi,\n\nPlease review the attached Q3 budget report and send your department's approval by Friday EOD. This is blocking the finance team's monthly close.\n\nRegards,\nSarah",
+    "sender": "boss@company.com",
+    "timestamp": "2024-10-14T09:15:00"
+  },
+  {
+    "id": "email_002",
+    "subject": "Your Amazon order has shipped!",
+    "body": "Your order #112-3456789 has shipped and will arrive by Thursday. Track your package at amazon.com/orders.",
+    "sender": "shipping@amazon.com",
+    "timestamp": "2024-10-14T10:02:00"
+  },
+  {
+    "id": "email_003",
+    "subject": "Re: Project Falcon - Integration deadline",
+    "body": "Hi team,\n\nJust a reminder that the API integration for Project Falcon must be completed by October 20th. Please flag any blockers ASAP. Client is watching closely.\n\nThanks,\nMike",
+    "sender": "client@bigcorp.com",
+    "timestamp": "2024-10-14T11:30:00"
+  },
+  {
+    "id": "email_004",
+    "subject": "Weekly Newsletter - Tech Digest #45",
+    "body": "This week in tech: OpenAI announces new model, Google releases Android 15, and Apple faces EU antitrust probe. Read more at techdigest.io. To unsubscribe click here.",
+    "sender": "newsletter@techdigest.io",
+    "timestamp": "2024-10-14T08:00:00"
+  },
+  {
+    "id": "email_005",
+    "subject": "Server is DOWN - Immediate attention needed",
+    "body": "URGENT: Production server prod-us-east-1 is not responding. Users are getting 503 errors. DevOps team please investigate immediately. This has been ongoing for 15 minutes.",
+    "sender": "alerts@monitoring.com",
+    "timestamp": "2024-10-14T13:45:00"
+  },
+  {
+    "id": "email_006",
+    "subject": "Team lunch this Friday at 12:30",
+    "body": "Hey everyone,\n\nJust a heads up — we're doing a team lunch this Friday at Nando's at 12:30pm. Let me know if you can make it by replying to this email!\n\nCheers,\nRachel",
+    "sender": "rachel@company.com",
+    "timestamp": "2024-10-14T09:45:00"
+  },
+  {
+    "id": "email_007",
+    "subject": "Your invoice INV-2024-089 is due",
+    "body": "Dear Customer,\n\nThis is a reminder that invoice INV-2024-089 for $2,340 is due on October 20, 2024. Please arrange payment via bank transfer or visit our portal.\n\nRegards,\nAccounts Team",
+    "sender": "billing@vendor.com",
+    "timestamp": "2024-10-13T15:00:00"
+  },
+  {
+    "id": "email_008",
+    "subject": "Performance review scheduled for Oct 22",
+    "body": "Hi,\n\nYour annual performance review has been scheduled for October 22 at 2:00 PM with your manager. Please prepare a self-assessment form beforehand.\n\nHR Team",
+    "sender": "hr@company.com",
+    "timestamp": "2024-10-12T10:00:00"
+  },
+  {
+    "id": "email_009",
+    "subject": "50% OFF - Flash Sale ends tonight!",
+    "body": "Don't miss our BIGGEST sale of the year! 50% off everything storewide. Use code FLASH50 at checkout. Sale ends at midnight tonight! Unsubscribe from promotional emails here.",
+    "sender": "deals@shopify-store.com",
+    "timestamp": "2024-10-14T07:00:00"
+  },
+  {
+    "id": "email_010",
+    "subject": "Follow-up: Proposal for cloud migration",
+    "body": "Hi,\n\nFollowing our call last week, I've attached the revised cloud migration proposal. Could you review it and share feedback by Wednesday? We'd like to kick off in November.\n\nBest,\nDavid",
+    "sender": "david@consultants.com",
+    "timestamp": "2024-10-13T16:30:00"
+  },
+  {
+    "id": "email_011",
+    "subject": "GitHub PR #234 needs your review",
+    "body": "Hey,\n\nCould you review PR #234 (auth-service refactor)? It's been open for 3 days and is blocking the sprint. Only needs a quick look.\n\nThanks,\nAlex",
+    "sender": "alex@company.com",
+    "timestamp": "2024-10-14T10:50:00"
+  },
+  {
+    "id": "email_012",
+    "subject": "LinkedIn: 5 new connection requests",
+    "body": "You have 5 new connection requests on LinkedIn. Log in to review and respond to them.",
+    "sender": "noreply@linkedin.com",
+    "timestamp": "2024-10-14T08:30:00"
+  },
+  {
+    "id": "email_013",
+    "subject": "Critical security patch - deploy by EOD",
+    "body": "Hi team,\n\nA critical CVE has been identified in our auth library. Security team has prepared a patch (v2.3.1). All environments must be updated by end of day today. Please confirm once done.\n\nSecurity Team",
+    "sender": "cto@company.com",
+    "timestamp": "2024-10-14T12:00:00"
+  },
+  {
+    "id": "email_014",
+    "subject": "Webinar: Future of AI in Enterprise - Tomorrow 3PM",
+    "body": "You are registered for tomorrow's webinar: Future of AI in Enterprise. Join link: zoom.us/j/123456. Duration: 90 minutes. Add to calendar.",
+    "sender": "events@aiconference.com",
+    "timestamp": "2024-10-14T09:00:00"
+  },
+  {
+    "id": "email_015",
+    "subject": "Monthly subscription renewal - Notion",
+    "body": "Your Notion Pro subscription renews on October 18, 2024 for $16/month. No action needed unless you wish to cancel before the renewal date.",
+    "sender": "billing@notion.so",
+    "timestamp": "2024-10-13T08:00:00"
+  },
+  {
+    "id": "email_016",
+    "subject": "Contract extension - please sign by Oct 18",
+    "body": "Hi,\n\nPlease find attached the contract extension for the upcoming project phase. It requires your signature by October 18. Use the DocuSign link below to sign.\n\nLegal Team",
+    "sender": "legal@company.com",
+    "timestamp": "2024-10-13T11:00:00"
+  },
+  {
+    "id": "email_017",
+    "subject": "Your flight to Mumbai is confirmed",
+    "body": "Booking confirmed: IndiGo 6E-204, Delhi to Mumbai, Oct 19 at 07:20. PNR: ABC123. Web check-in opens 48 hours before departure at goindigo.in.",
+    "sender": "noreply@indigo.com",
+    "timestamp": "2024-10-13T14:00:00"
+  },
+  {
+    "id": "email_018",
+    "subject": "Feedback needed: new dashboard design",
+    "body": "Hi,\n\nThe design team has mocked up a new analytics dashboard. We'd love your feedback before finalizing. Figma link is attached. Please respond with comments by Friday.\n\nUX Team",
+    "sender": "ux@company.com",
+    "timestamp": "2024-10-14T11:00:00"
+  },
+  {
+    "id": "email_019",
+    "subject": "Password reset request",
+    "body": "We received a request to reset the password for your account. If you made this request, click the link below within 1 hour. If you did not request this, ignore this email.",
+    "sender": "security@app.com",
+    "timestamp": "2024-10-14T14:05:00"
+  },
+  {
+    "id": "email_020",
+    "subject": "Interview invite: Senior Engineer role at TechCorp",
+    "body": "Hi,\n\nWe reviewed your profile and would like to invite you for a technical interview for the Senior Engineer position. Please let us know your availability for next week so we can schedule.\n\nRecruiting Team, TechCorp",
+    "sender": "recruiting@techcorp.com",
+    "timestamp": "2024-10-14T13:00:00"
+  }
+]

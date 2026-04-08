@@ -1,0 +1,17 @@
+{
+  "Formal": {
+    "description": "Professional and respectful tone. Use full sentences, avoid contractions, maintain formality throughout. Suitable for clients, managers, and external stakeholders.",
+    "example_opening": "Dear [Name],\n\nThank you for your email.",
+    "example_closing": "Kind regards,"
+  },
+  "Friendly": {
+    "description": "Warm, approachable, and conversational tone. Use contractions, be personable, and add light positive language where appropriate. Suitable for colleagues and familiar contacts.",
+    "example_opening": "Hi [Name],\n\nThanks so much for reaching out!",
+    "example_closing": "Cheers,"
+  },
+  "Concise": {
+    "description": "Direct and brief. Get to the point in as few words as possible. No filler phrases, no small talk, no unnecessary context. Every sentence must carry information.",
+    "example_opening": "Hi,",
+    "example_closing": "Thanks,"
+  }
+}

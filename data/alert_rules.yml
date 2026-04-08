@@ -1,0 +1,64 @@
+groups:
+  - name: aeoa_alerts
+    rules:
+
+      - alert: HighErrorRate
+        expr: >
+          rate(aeoa_api_requests_total{status=~"5.."}[5m])
+          / rate(aeoa_api_requests_total[5m]) > 0.10
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High API error rate"
+          description: "Error rate {{ $value | humanizePercentage }} exceeds 10%"
+
+      - alert: HighLatency
+        expr: >
+          histogram_quantile(0.95,
+            rate(aeoa_api_latency_seconds_bucket[5m])
+          ) > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API latency"
+          description: "p95 latency {{ $value | humanizeDuration }} exceeds 5s"
+
+      - alert: MLAccuracyDrop
+        expr: aeoa_ml_accuracy < 0.60
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ML model accuracy critically low"
+          description: "Model accuracy {{ $value | humanizePercentage }}"
+
+      - alert: LowCacheHitRate
+        expr: >
+          rate(aeoa_cache_hits_total[10m])
+          / (rate(aeoa_cache_hits_total[10m]) + 1) < 0.20
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Low LLM cache hit rate"
+          description: "Cache hit rate below 20% — increased LLM costs"
+
+      - alert: HighRateLimitBreaches
+        expr: rate(aeoa_rate_limit_hits_total[5m]) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate limit violations"
+          description: "{{ $value }} rate limit hits per second"
+
+      - alert: NoEmailsProcessed
+        expr: rate(aeoa_emails_processed_total[30m]) == 0
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "No emails processed in 30 minutes"
+          description: "System may be idle or stuck"

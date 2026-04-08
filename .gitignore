@@ -1,0 +1,28 @@
+.env
+.env.example
+*.db
+data/models/
+data/aeoa.db
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.pickle
+*.pkl
+.streamlit/secrets.toml
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# VS Code
+.vscode/
+
+# Temporary files
+*.tmp
