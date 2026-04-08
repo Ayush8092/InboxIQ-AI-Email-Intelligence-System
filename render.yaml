@@ -7,6 +7,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn api.routes:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13
       - key: APP_ENV
         value: production
       - key: GROQ_API_KEY
@@ -61,6 +63,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run ui/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13
       - key: APP_ENV
         value: production
       - key: GROQ_API_KEY
@@ -94,6 +98,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: celery -A workers.celery_app worker --loglevel=info --concurrency=2 -Q email_processing,ml_tasks,default
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13
       - key: APP_ENV
         value: production
       - key: GROQ_API_KEY
