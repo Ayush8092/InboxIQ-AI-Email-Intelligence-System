@@ -1,14 +1,12 @@
 services:
 
-  # ── FastAPI Backend ──────────────────────────────────────────────────────
   - type: web
     name: aeoa-api
     runtime: python
+    pythonVersion: "3.11.9"
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn api.routes:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.13
       - key: APP_ENV
         value: production
       - key: GROQ_API_KEY
@@ -56,15 +54,13 @@ services:
       mountPath: /data
       sizeGB: 1
 
-  # ── Streamlit Frontend ───────────────────────────────────────────────────
   - type: web
     name: aeoa-ui
     runtime: python
+    pythonVersion: "3.11.9"
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run ui/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.13
       - key: APP_ENV
         value: production
       - key: GROQ_API_KEY
@@ -91,15 +87,13 @@ services:
       mountPath: /data
       sizeGB: 1
 
-  # ── Celery Worker ────────────────────────────────────────────────────────
   - type: worker
     name: aeoa-celery
     runtime: python
+    pythonVersion: "3.11.9"
     buildCommand: pip install -r requirements.txt
     startCommand: celery -A workers.celery_app worker --loglevel=info --concurrency=2 -Q email_processing,ml_tasks,default
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.13
       - key: APP_ENV
         value: production
       - key: GROQ_API_KEY
@@ -125,7 +119,6 @@ services:
       mountPath: /data
       sizeGB: 1
 
-  # ── Redis ────────────────────────────────────────────────────────────────
   - type: redis
     name: aeoa-redis
     plan: free
