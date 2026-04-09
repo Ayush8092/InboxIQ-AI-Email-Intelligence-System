@@ -3,6 +3,7 @@ services:
   - type: web
     name: aeoa-api
     runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn api.routes:app --host 0.0.0.0 --port $PORT
     envVars:
@@ -26,18 +27,8 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: aeoa-redis
-          property: connectionString
-      - key: REDIS_BACKEND_URL
-        fromService:
-          type: redis
-          name: aeoa-redis
-          property: connectionString
       - key: DB_PATH
-        value: /data/aeoa.db
+        value: /tmp/aeoa.db
       - key: RATE_LIMITS
         value: process_emails:50:3600,gmail_fetch:10:3600,train_model:5:3600,generate_reply:30:3600
       - key: ENDPOINT_TIMEOUT_S
@@ -50,14 +41,11 @@ services:
         value: "5"
       - key: CB_RECOVERY_TIMEOUT
         value: "60"
-    disk:
-      name: aeoa-data
-      mountPath: /data
-      sizeGB: 1
 
   - type: web
     name: aeoa-ui
     runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: streamlit run ui/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
     envVars:
@@ -77,53 +65,5 @@ services:
         sync: false
       - key: OAUTH_REDIRECT_URI
         sync: false
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: aeoa-redis
-          property: connectionString
       - key: DB_PATH
-        value: /data/aeoa.db
-    disk:
-      name: aeoa-ui-data
-      mountPath: /data
-      sizeGB: 1
-
-  - type: worker
-    name: aeoa-celery
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: celery -A workers.celery_app worker --loglevel=info --concurrency=2 -Q email_processing,ml_tasks,default
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.9
-      - key: APP_ENV
-        value: production
-      - key: GROQ_API_KEY
-        sync: false
-      - key: GROQ_MODEL
-        value: llama-3.1-8b-instant
-      - key: AEOA_ENCRYPTION_KEY
-        sync: false
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: aeoa-redis
-          property: connectionString
-      - key: REDIS_BACKEND_URL
-        fromService:
-          type: redis
-          name: aeoa-redis
-          property: connectionString
-      - key: DB_PATH
-        value: /data/aeoa.db
-    disk:
-      name: aeoa-worker-data
-      mountPath: /data
-      sizeGB: 1
-
-  - type: redis
-    name: aeoa-redis
-    plan: free
-    maxmemoryPolicy: allkeys-lru
-    ipAllowList: []
+        value: /tmp/aeoa.db
