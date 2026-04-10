@@ -1,44 +1,34 @@
 """
 Production-grade email body cleaner.
 
+Uses BeautifulSoup for proper HTML parsing (handles real Gmail HTML correctly).
+Falls back to stdlib HTMLParser if beautifulsoup4 not available.
+
 Fixes:
-1. Extracts ALL anchor tag hrefs before stripping HTML
-2. Removes CSS/JS noise completely
-3. Returns readable plain text + extracted links
-4. Handles nested skip tags correctly
-5. Removes tracking pixels and invisible content
+1. Full HTML body extraction (not just snippets)
+2. Anchor tag href extraction before stripping
+3. Job-domain link detection
+4. CSS/JS completely removed
+5. Broken word repair from bad PDF extraction
 """
 import re
-from html.parser import HTMLParser
 from urllib.parse import urlparse
+from utils.secure_logger import get_secure_logger
 
-# Tags whose content must be completely removed (including inner text)
-_SKIP_TAGS = {
-    "script", "style", "head", "meta", "link", "noscript",
-    "iframe", "svg", "path", "defs", "symbol", "use",
+logger = get_secure_logger(__name__)
+
+# Job platform domains — used to identify apply links
+_JOB_DOMAINS = {
+    "glassdoor.com", "glassdoor.co.in", "naukri.com",
+    "linkedin.com", "indeed.com", "monster.com",
+    "shine.com", "foundit.in", "instahyre.com",
+    "unstop.com", "internshala.com", "wellfound.com",
+    "cutshort.io", "hirist.tech", "apna.co",
+    "timesjobs.com", "careerbuilder.com", "ziprecruiter.com",
+    "greenhouse.io", "lever.co", "ashbyhq.com",
+    "workable.com", "jobs.google.com", "simplyhired.com",
 }
 
-# Tags that produce a newline in output
-_BLOCK_TAGS = {
-    "p", "br", "div", "li", "h1", "h2", "h3", "h4", "h5", "h6",
-    "tr", "td", "th", "blockquote", "article", "section",
-    "header", "footer", "main", "aside",
-}
-
-# Domains that are job-related (for link filtering)
-_JOB_LINK_DOMAINS = {
-    "glassdoor.com", "glassdoor.co.in",
-    "naukri.com", "linkedin.com", "indeed.com",
-    "monster.com", "shine.com", "foundit.in",
-    "instahyre.com", "unstop.com", "internshala.com",
-    "wellfound.com", "angellist.com", "cutshort.io",
-    "hirist.tech", "apna.co", "timesjobs.com",
-    "careerbuilder.com", "ziprecruiter.com",
-    "jobs.google.com", "greenhouse.io", "lever.co",
-    "ashbyhq.com", "workable.com", "bamboohr.com",
-}
-
-# Patterns to remove from cleaned text
 _NOISE_PATTERNS = [
     r'If you (?:are unable|cannot) (?:view|see) this email[^\n]*',
     r'View (?:this email|in browser)[^\n]*',
@@ -46,182 +36,184 @@ _NOISE_PATTERNS = [
     r'You (?:are|were) (?:receiving|subscribed)[^\n]*',
     r'©\s*\d{4}[^\n]*',
     r'\[image(?::[^\]]+)?\]',
-    r'Click here to[^\n]{0,80}',
-    r'Privacy Policy[^\n]*',
-    r'Terms of (?:Service|Use)[^\n]*',
-    r'\d+px[^\n]{0,40}',          # CSS remnants
-    r'display:\s*none[^\n]*',      # CSS remnants
-    r'color:\s*#[0-9a-fA-F]+',    # CSS color values
-    r'font-(?:size|family|weight)[^\n]*',  # CSS font properties
-    r'background-color[^\n]*',
-    r'https?://[^\s]{120,}',       # extremely long URLs (tracking)
-    r'[a-f0-9]{40,}',              # SHA hashes (tracking IDs)
-    r'==[a-zA-Z0-9+/]{20,}==',    # base64 blobs
+    r'https?://[^\s]{150,}',
+    r'[a-f0-9]{40,}',
 ]
 
 
-class _EmailParser(HTMLParser):
-    """
-    Two-pass email HTML parser.
-    Pass 1: collect all href links from anchor tags
-    Pass 2: extract clean readable text
-    """
+def _parse_with_beautifulsoup(html: str) -> tuple[str, list[str], list[str]]:
+    """Parse HTML using BeautifulSoup — best quality."""
+    from bs4 import BeautifulSoup
 
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self._text_parts:  list[str] = []
-        self._links:       list[str] = []
-        self._skip_depth:  int       = 0
-        self._in_anchor:   bool      = False
-        self._current_href: str      = ""
+    soup = BeautifulSoup(html, "html.parser")
 
-    def handle_starttag(self, tag: str, attrs):
-        tag_l = tag.lower()
+    # Remove unwanted tags completely
+    for tag in soup(["script", "style", "head", "meta",
+                     "link", "noscript", "iframe", "img"]):
+        tag.decompose()
 
-        # Track skip-tag nesting depth
-        if tag_l in _SKIP_TAGS:
-            self._skip_depth += 1
-            return
+    # Extract all links BEFORE getting text
+    all_links  = []
+    job_links  = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if href.startswith(("http://", "https://")):
+            all_links.append(href)
+            try:
+                domain = urlparse(href).netloc.lower().lstrip("www.")
+                if any(jd in domain for jd in _JOB_DOMAINS):
+                    job_links.append(href)
+                elif re.search(
+                    r'/job[s]?/|/career[s]?/|/apply|/opening|/position|/role|jobid',
+                    href, re.IGNORECASE
+                ):
+                    job_links.append(href)
+            except Exception:
+                pass
 
-        if self._skip_depth > 0:
-            return
+    # Get clean text
+    text = soup.get_text(separator="\n")
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = text.strip()
 
-        # Extract href from anchor tags
-        if tag_l == "a":
-            attrs_dict = dict(attrs)
-            href = attrs_dict.get("href", "")
-            if href and href.startswith(("http://", "https://")):
-                self._links.append(href.strip())
-                self._current_href = href.strip()
-            self._in_anchor = True
+    # Deduplicate links
+    all_links = list(dict.fromkeys(all_links))[:30]
+    job_links = list(dict.fromkeys(job_links))[:10]
 
-        # Block-level tags add newline for readability
-        if tag_l in _BLOCK_TAGS:
-            self._text_parts.append("\n")
+    return text, all_links, job_links
 
-    def handle_endtag(self, tag: str):
-        tag_l = tag.lower()
-        if tag_l in _SKIP_TAGS and self._skip_depth > 0:
-            self._skip_depth -= 1
-        if tag_l == "a":
-            self._in_anchor = False
-            self._current_href = ""
 
-    def handle_data(self, data: str):
-        if self._skip_depth > 0:
-            return
-        text = data.strip()
-        if text and len(text) > 1:
-            # Skip invisible CSS class names and single chars
-            if not re.match(r'^[{};:@]', text):
-                self._text_parts.append(text)
+def _parse_with_stdlib(html: str) -> tuple[str, list[str], list[str]]:
+    """Fallback parser using stdlib HTMLParser."""
+    from html.parser import HTMLParser
 
-    def get_text(self) -> str:
-        raw = " ".join(self._text_parts)
-        raw = re.sub(r"\n\s*\n\s*\n+", "\n\n", raw)
-        raw = re.sub(r"[ \t]{2,}", " ", raw)
-        return raw.strip()
+    _SKIP = {"script","style","head","meta","link","noscript","iframe","svg"}
+    _BLOCK = {"p","br","div","li","h1","h2","h3","h4","h5","h6","tr","td","th"}
 
-    def get_links(self) -> list[str]:
-        # Deduplicate while preserving order
-        seen, unique = set(), []
-        for link in self._links:
-            if link not in seen:
-                seen.add(link)
-                unique.append(link)
-        return unique
+    class _Parser(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self._parts      = []
+            self._links      = []
+            self._skip_depth = 0
+
+        def handle_starttag(self, tag, attrs):
+            t = tag.lower()
+            if t in _SKIP:
+                self._skip_depth += 1
+                return
+            if self._skip_depth:
+                return
+            if t == "a":
+                d = dict(attrs)
+                h = d.get("href","")
+                if h.startswith(("http://","https://")):
+                    self._links.append(h)
+            if t in _BLOCK:
+                self._parts.append("\n")
+
+        def handle_endtag(self, tag):
+            if tag.lower() in _SKIP and self._skip_depth:
+                self._skip_depth -= 1
+
+        def handle_data(self, data):
+            if not self._skip_depth:
+                t = data.strip()
+                if t:
+                    self._parts.append(t)
+
+        def get_text(self):
+            raw = " ".join(self._parts)
+            raw = re.sub(r"\n{3,}", "\n\n", raw)
+            raw = re.sub(r"[ \t]{2,}", " ", raw)
+            return raw.strip()
+
+    p = _Parser()
+    try:
+        p.feed(html)
+        text  = p.get_text()
+        links = list(dict.fromkeys(p._links))[:30]
+        job_links = []
+        for lnk in links:
+            try:
+                domain = urlparse(lnk).netloc.lower().lstrip("www.")
+                if any(jd in domain for jd in _JOB_DOMAINS):
+                    job_links.append(lnk)
+            except Exception:
+                pass
+        return text, links, job_links[:10]
+    except Exception:
+        plain = re.sub(r"<[^>]+>", " ", html)
+        plain = re.sub(r"\s+", " ", plain).strip()
+        return plain, [], []
 
 
 def _remove_noise(text: str) -> str:
-    """Remove common email boilerplate after HTML stripping."""
-    for pattern in _NOISE_PATTERNS:
-        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    for pat in _NOISE_PATTERNS:
+        text = re.sub(pat, "", text, flags=re.IGNORECASE)
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]{2,}", " ", text)
     return text.strip()
 
 
+def _repair_broken_words(text: str) -> str:
+    """
+    Fix PDF extraction issues like 'learn continu ously' → 'learn continuously'.
+    Joins words split by space when the split doesn't form real words.
+    """
+    # Fix common PDF word-break patterns
+    text = re.sub(r'(\w{3,})\s+ously\b', r'\1ously', text)
+    text = re.sub(r'(\w{3,})\s+tion\b',  r'\1tion',  text)
+    text = re.sub(r'(\w{3,})\s+ing\b',   r'\1ing',   text)
+    text = re.sub(r'(\w{3,})\s+ment\b',  r'\1ment',  text)
+    text = re.sub(r'(\w{3,})\s+ness\b',  r'\1ness',  text)
+    text = re.sub(r'(\w{3,})\s+ity\b',   r'\1ity',   text)
+    text = re.sub(r'(\w{3,})\s+ance\b',  r'\1ance',  text)
+    text = re.sub(r'(\w{3,})\s+ence\b',  r'\1ence',  text)
+    return text
+
+
 def parse_email_html(raw: str) -> dict:
     """
     Full email HTML parsing.
-
-    Returns:
-    {
-      "text":       clean readable text,
-      "links":      all hrefs extracted from anchor tags,
-      "job_links":  filtered job-related links only,
-      "is_html":    bool
-    }
+    Returns {text, links, job_links, is_html}
     """
     if not raw:
         return {"text": "", "links": [], "job_links": [], "is_html": False}
 
-    is_html_content = bool(
-        re.search(r"<(?:html|body|div|span|table|p|a)\b", raw, re.IGNORECASE)
-    )
+    is_html = bool(re.search(
+        r"<(?:html|body|div|span|table|p|a|td)\b", raw, re.IGNORECASE
+    ))
 
-    if not is_html_content:
-        # Plain text — just clean whitespace
+    if not is_html:
         text = re.sub(r"[ \t]{2,}", " ", raw).strip()
+        links = re.findall(r'https?://[^\s<>"\'(){}\[\]\\,]{10,}', text)
         return {
-            "text":      text[:3000],
-            "links":     _extract_plain_text_links(text),
+            "text":      text[:4000],
+            "links":     links[:20],
             "job_links": [],
             "is_html":   False,
         }
 
-    parser = _EmailParser()
+    # Try BeautifulSoup first (best quality)
     try:
-        parser.feed(raw)
-        text  = parser.get_text()
-        links = parser.get_links()
-    except Exception:
-        # Fallback regex strip
-        text  = re.sub(r"<[^>]+>", " ", raw)
-        text  = re.sub(r"\s+", " ", text).strip()
-        links = _URL_RE.findall(raw)
+        text, all_links, job_links = _parse_with_beautifulsoup(raw)
+    except ImportError:
+        text, all_links, job_links = _parse_with_stdlib(raw)
 
-    text      = _remove_noise(text)
-    job_links = _filter_job_links(links)
+    text = _remove_noise(text)
 
     return {
-        "text":      text[:4000],
-        "links":     links[:30],
-        "job_links": job_links[:10],
+        "text":      text[:5000],
+        "links":     all_links,
+        "job_links": job_links,
         "is_html":   True,
     }
 
 
-_URL_RE = re.compile(r'https?://[^\s<>"\'(){}\[\]\\,]{10,}')
-
-
-def _extract_plain_text_links(text: str) -> list[str]:
-    return list(dict.fromkeys(_URL_RE.findall(text)))[:20]
-
-
-def _filter_job_links(links: list[str]) -> list[str]:
-    """Keep only links pointing to job platforms."""
-    job_links = []
-    for link in links:
-        try:
-            domain = urlparse(link).netloc.lower().lstrip("www.")
-            if any(jd in domain for jd in _JOB_LINK_DOMAINS):
-                job_links.append(link)
-        except Exception:
-            pass
-    # Also keep links with job-related URL patterns
-    for link in links:
-        if link not in job_links:
-            if re.search(r'/job[s]?/|/career[s]?/|/apply|/opening|/position|/role', link, re.IGNORECASE):
-                job_links.append(link)
-    return list(dict.fromkeys(job_links))[:10]
-
-
-def clean_email_body(body: str, max_chars: int = 3000) -> str:
-    """
-    Convenience function — returns cleaned text only.
-    Use parse_email_html() when you also need links.
-    """
+def clean_email_body(body: str, max_chars: int = 4000) -> str:
+    """Returns cleaned plain text from email body."""
     if not body:
         return ""
     result = parse_email_html(body)
@@ -229,10 +221,6 @@ def clean_email_body(body: str, max_chars: int = 3000) -> str:
 
 
 def extract_links_from_email(body: str) -> dict:
-    """
-    Extract all links and job-specific links from email body.
-    Returns {"all_links": [...], "job_links": [...]}
-    """
     result = parse_email_html(body)
     return {
         "all_links": result["links"],
