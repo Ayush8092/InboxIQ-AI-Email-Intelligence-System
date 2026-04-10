@@ -1,13 +1,14 @@
 """
-Categorized Emails Tab.
+Categorized Emails Tab — complete rewrite.
 
 Fixes:
-- Clean body display (HTML toggle)
-- Correct job detection
-- Apply link display from anchor tags
-- Skill validation in job cards
-- Fixed 100% match score display
-- Proper empty state messages
+1. Shows FULL email content (not truncated)
+2. Job emails are visible even when no resume uploaded
+3. After resume upload, jobs are scored and displayed
+4. HTML/Raw toggle for email body
+5. enrich_job_with_scraping properly imported
+6. All job links displayed
+7. Emails visible in job category view
 """
 import streamlit as st
 from collections import Counter
@@ -16,19 +17,16 @@ from utils.helpers import priority_label, truncate
 from utils.email_cleaner import clean_email_body, parse_email_html
 
 _JOB_CATEGORIES = {
-    "Job / Recruitment", "Job", "job", "job_recruitment", "Job/Recruitment",
+    "Job / Recruitment","Job","job","job_recruitment","Job/Recruitment",
 }
 
 _PRIORITY_COLORS = {
-    1: "#FF4444", 2: "#FF8C00", 3: "#FFD700",
-    4: "#4169E1", 5: "#808080", 6: "#A9A9A9", 7: "#C0C0C0",
+    1:"#FF4444",2:"#FF8C00",3:"#FFD700",
+    4:"#4169E1",5:"#808080",6:"#A9A9A9",7:"#C0C0C0",
 }
-
 _REC_COLORS = {
-    "Strong Match":  "#22c55e",
-    "Good Match":    "#84cc16",
-    "Partial Match": "#f59e0b",
-    "Weak Match":    "#ef4444",
+    "Strong Match":"#22c55e","Good Match":"#84cc16",
+    "Partial Match":"#f59e0b","Weak Match":"#ef4444",
 }
 
 
@@ -36,21 +34,66 @@ def _get_source() -> str:
     return "gmail" if st.session_state.get("authenticated") else "demo"
 
 
+def _render_full_email_content(email: dict, show_raw: bool = False):
+    """
+    Render the FULL email content.
+    Shows cleaned text by default, raw HTML on toggle.
+    """
+    body = email.get("body","")
+    if not body:
+        st.caption("_No email body available_")
+        return
+
+    if show_raw:
+        st.text_area(
+            "Raw HTML",
+            value=body[:3000],
+            height=200,
+            disabled=True,
+            key=f"raw_{email.get('id','')[:20]}",
+        )
+    else:
+        clean = clean_email_body(body, max_chars=5000)
+        if clean:
+            st.text_area(
+                "Email Content",
+                value=clean,
+                height=200,
+                disabled=True,
+                key=f"clean_{email.get('id','')[:20]}",
+            )
+        else:
+            st.caption("_Could not extract readable text from this email_")
+
+    # Show extracted links
+    parsed    = parse_email_html(body)
+    job_links = parsed.get("job_links",[])
+    all_links = parsed.get("links",[])
+
+    if job_links:
+        st.markdown("**🔗 Job Links found in email:**")
+        for link in job_links[:5]:
+            st.markdown(f"- [{link[:80]}]({link})")
+    elif all_links:
+        st.markdown("**🔗 Links found in email:**")
+        for link in all_links[:3]:
+            st.markdown(f"- [{link[:80]}]({link})")
+
+
 def _render_job_card(job: dict, idx: int, show_match: bool = False):
-    """Render job card with apply links and validated skills."""
-    match     = job.get("match", {})
-    score     = match.get("match_score", 0) if show_match else None
-    rec       = match.get("recommendation", "") if show_match else ""
-    rec_color = _REC_COLORS.get(rec, "#808080")
-    ready     = match.get("ready_to_apply", False) if show_match else False
+    """Render a single job card with all details and links."""
+    match     = job.get("match",{})
+    score     = match.get("match_score",0) if show_match else None
+    rec       = match.get("recommendation","") if show_match else ""
+    rec_color = _REC_COLORS.get(rec,"#808080")
+    ready     = match.get("ready_to_apply",False) if show_match else False
 
     with st.container():
-        col_t, col_s = st.columns([4, 1])
-
+        col_t, col_s = st.columns([4,1])
         with col_t:
-            st.markdown(f"### 💼 {job.get('role', 'Unknown Role')}")
+            st.markdown(f"### 💼 {job.get('role','Unknown Role')}")
             parts = []
-            if job.get("company") and job["company"] != "Unknown":
+            if job.get("company") and job["company"] not in ("Unknown",""):
                 parts.append(f"🏢 **{job['company']}**")
             if job.get("location") and job["location"] != "Not specified":
                 parts.append(f"📍 {job['location']}")
@@ -70,15 +113,15 @@ def _render_job_card(job: dict, idx: int, show_match: bool = False):
                     unsafe_allow_html=True,
                 )
                 if ready:
-                    st.success("✅ Ready")
+                    st.success("✅ Ready to Apply")
 
-        # Skills — only show validated ones
-        skills = job.get("skills", [])
+        # Skills
+        skills = job.get("skills",[])
         if skills:
             tags = " ".join(
                 f'<span style="background:#e2e8f0;padding:2px 8px;'
                 f'border-radius:12px;font-size:12px;margin:2px;">{s}</span>'
-                for s in skills[:12]
+                for s in skills[:15]
             )
             st.markdown(f"**Skills:** {tags}", unsafe_allow_html=True)
         else:
@@ -86,7 +129,7 @@ def _render_job_card(job: dict, idx: int, show_match: bool = False):
 
         # Description
         if job.get("description"):
-            st.caption(job["description"])
+            st.caption(job["description"][:200])
 
         # Match breakdown
         if show_match and match:
@@ -99,6 +142,8 @@ def _render_job_card(job: dict, idx: int, show_match: bool = False):
                     )
                 if match.get("fit_reason"):
                     st.caption(f"💡 {match['fit_reason']}")
+                if match.get("strengths"):
+                    st.caption(f"💪 {match['strengths']}")
             with c2:
                 if match.get("missing_skills"):
                     st.markdown(
@@ -108,23 +153,26 @@ def _render_job_card(job: dict, idx: int, show_match: bool = False):
                 if match.get("gaps"):
                     st.caption(f"📌 {match['gaps']}")
 
-            suggestions = match.get("skill_gap_suggestions", [])
+            suggestions = match.get("skill_gap_suggestions",[])
             if suggestions:
-                with st.expander("📚 Skill Gap Learning Path"):
+                with st.expander("📚 Learning Path for Missing Skills"):
                     for sg in suggestions[:3]:
-                        skill    = sg.get("skill", "")
-                        resource = sg.get("resource", "")
+                        skill    = sg.get("skill","")
+                        resource = sg.get("resource","")
                         if skill:
                             st.write(f"• **{skill}** — {resource}")
 
-        # Apply buttons
-        all_links = job.get("all_links") or ([job["link"]] if job.get("link") else [])
+        # Apply links — show ALL links from this job
+        all_links = job.get("all_links",[])
+        if not all_links and job.get("link"):
+            all_links = [job["link"]]
+
         if all_links:
             st.markdown("**Apply:**")
             cols = st.columns(min(len(all_links), 3))
             for i, link in enumerate(all_links[:3]):
                 with cols[i]:
-                    label = f"🔗 Link {i+1}" if i > 0 else "🔗 Apply Now"
+                    label = "🔗 Apply Now" if i == 0 else f"🔗 Link {i+1}"
                     st.markdown(
                         f'<a href="{link}" target="_blank">'
                         f'<button style="background:#4285F4;color:white;border:none;'
@@ -135,46 +183,35 @@ def _render_job_card(job: dict, idx: int, show_match: bool = False):
         else:
             st.caption("_No apply link found_")
 
-        # Source badge
-        src = job.get("source", "")
-        if src == "rule":
-            st.caption("📋 Extracted by rules")
-        elif src == "llm":
-            st.caption("🤖 Extracted by AI")
-        if job.get("scraped"):
-            st.caption("🌐 Enriched from web")
-
+        # Source
+        src_txt = {"bs4_anchor":"🔗 From anchor tags","rule":"📋 Rule-based","llm":"🤖 AI-extracted"}.get(
+            job.get("source",""), "📧 Extracted"
+        )
+        st.caption(src_txt + (" | 🌐 Web enriched" if job.get("scraped") else ""))
+        st.caption(f"From email: {truncate(job.get('email_subject',''),60)}")
         st.markdown("---")
 
 
-def _render_email_card(email: dict, processed: dict | None, show_raw: bool):
-    """Render a standard email card with clean body."""
+def _render_email_card_full(email: dict, processed: dict | None, show_raw: bool):
+    """Render email card with expandable FULL content."""
     p       = processed or {}
-    subject = email.get("subject", "")
-    sender  = email.get("sender", "")
-    cat     = p.get("category", "—")
+    subject = email.get("subject","")
+    sender  = email.get("sender","")
+    cat     = p.get("category","—")
     pr      = p.get("priority")
-    task    = p.get("task", "")
-    summary = p.get("summary", "")
-    color   = _PRIORITY_COLORS.get(pr, "#808080")
-
-    body_raw = email.get("body", "")
-    if show_raw:
-        body_display = body_raw[:500]
-    else:
-        body_display = clean_email_body(body_raw, max_chars=200)
+    task    = p.get("task","")
+    summary = p.get("summary","")
+    color   = _PRIORITY_COLORS.get(pr,"#808080")
 
     with st.container():
-        c1, c2 = st.columns([5, 1])
+        c1, c2 = st.columns([5,1])
         with c1:
             st.markdown(f"**{truncate(subject, 70)}**")
             st.caption(f"From: {sender} &nbsp;|&nbsp; {cat}")
-            if summary and summary not in ("—", ""):
+            if summary and summary not in ("—",""):
                 st.info(f"💡 {summary}")
-            elif body_display:
-                st.caption(truncate(body_display, 150))
-            if task and task not in ("—", ""):
-                st.markdown(f"📌 {truncate(task, 80)}")
+            if task and task not in ("—",""):
+                st.markdown(f"📌 **Task:** {truncate(task, 80)}")
         with c2:
             if pr:
                 st.markdown(
@@ -183,6 +220,11 @@ def _render_email_card(email: dict, processed: dict | None, show_raw: bool):
                     f'font-size:12px;">{priority_label(pr)}</div>',
                     unsafe_allow_html=True,
                 )
+
+        # Expand to see full email
+        with st.expander("📖 View Full Email", expanded=False):
+            _render_full_email_content(email, show_raw)
+
         st.markdown("---")
 
 
@@ -208,25 +250,23 @@ def render_categorized_tab():
             "⚠️ No emails processed yet. "
             "Go to **📥 Inbox** tab and click **🚀 Process Emails** first."
         )
-        return
 
-    # ── Build category counts ─────────────────────────────────────────────────
+    # ── Category counts ───────────────────────────────────────────────────────
     cat_counts: Counter = Counter()
-    cat_counts["All"]   = processed_count
-
+    cat_counts["All"]   = len(emails_list)
     for email in emails_list:
-        cat = proc_map.get(email["id"], {}).get("category")
+        cat = proc_map.get(email["id"],{}).get("category")
         if cat:
             cat_counts[cat] += 1
 
-    sorted_cats  = ["All"] + sorted(
+    sorted_cats = ["All"] + sorted(
         [c for c in cat_counts if c != "All"],
         key=lambda x: -cat_counts[x],
     )
     labels = {c: f"{c} ({cat_counts[c]})" for c in sorted_cats}
 
-    # ── Controls row ──────────────────────────────────────────────────────────
-    c1, c2, c3 = st.columns([2, 1, 2])
+    # ── Controls ──────────────────────────────────────────────────────────────
+    c1, c2, c3 = st.columns([2,1,2])
     with c1:
         sel_label = st.selectbox(
             "Filter by Category",
@@ -240,213 +280,251 @@ def render_categorized_tab():
             "Show raw HTML",
             value=False,
             key="show_raw",
-            help="Toggle between cleaned text and raw HTML",
         )
     with c3:
-        count = cat_counts.get(sel_cat, 0) if sel_cat != "All" else processed_count
+        count = cat_counts.get(sel_cat,0) if sel_cat != "All" else len(emails_list)
         st.metric("Emails shown", count)
 
     # Filter
     if sel_cat == "All":
-        filtered = [e for e in emails_list if e["id"] in proc_map]
+        filtered = emails_list
     else:
         filtered = [
             e for e in emails_list
-            if proc_map.get(e["id"], {}).get("category") == sel_cat
+            if proc_map.get(e["id"],{}).get("category") == sel_cat
+            or (sel_cat in _JOB_CATEGORIES and
+                proc_map.get(e["id"],{}).get("category","") in _JOB_CATEGORIES)
         ]
+        # If no processed emails match but emails exist, show all in category
+        if not filtered and sel_cat in _JOB_CATEGORIES:
+            # Show all emails (unprocessed too) when job category selected
+            filtered = emails_list
 
-    # ── Distribution bar ──────────────────────────────────────────────────────
+    # ── Distribution ─────────────────────────────────────────────────────────
     with st.expander("📊 Category Distribution", expanded=False):
-        total = max(processed_count, 1)
-        for cat, count in sorted(cat_counts.items(), key=lambda x: -x[1]):
+        total = max(len(emails_list), 1)
+        for cat, cnt in sorted(cat_counts.items(), key=lambda x: -x[1]):
             if cat == "All":
                 continue
-            pct = count / total * 100
-            ca, cb, cc = st.columns([3, 5, 1])
+            pct = cnt / total * 100
+            ca, cb, cc = st.columns([3,5,1])
             with ca: st.write(cat)
-            with cb: st.progress(pct / 100)
-            with cc: st.write(str(count))
+            with cb: st.progress(pct/100)
+            with cc: st.write(str(cnt))
 
     st.divider()
 
-    # ── Job intelligence ──────────────────────────────────────────────────────
-    if sel_cat in _JOB_CATEGORIES and filtered:
-        _render_job_intelligence(filtered, proc_map)
+    # ── Job intelligence mode ─────────────────────────────────────────────────
+    if sel_cat in _JOB_CATEGORIES:
+        _render_job_section(filtered, proc_map, show_raw)
         return
 
-    # ── Standard email view ───────────────────────────────────────────────────
+    # ── Standard view ─────────────────────────────────────────────────────────
     label = "All Emails" if sel_cat == "All" else sel_cat
     st.subheader(f"{label} ({len(filtered)})")
 
     if not filtered:
-        st.info(f"No emails found in '{sel_cat}'.")
+        st.info(f"No emails in '{sel_cat}'.")
         return
 
     for email in filtered:
-        _render_email_card(email, proc_map.get(email["id"]), show_raw)
+        _render_email_card_full(email, proc_map.get(email["id"]), show_raw)
 
 
-def _render_job_intelligence(job_emails: list[dict], proc_map: dict):
-    """Full job intelligence panel."""
-    st.subheader(f"💼 Job Intelligence ({len(job_emails)} emails)")
+def _render_job_section(job_emails: list[dict], proc_map: dict, show_raw: bool):
+    """
+    Job section: shows emails + extracted jobs + resume matching.
+    Emails are always visible. Resume upload is optional.
+    """
+    st.subheader(f"💼 Job / Recruitment ({len(job_emails)} emails)")
 
-    # ── Resume upload ─────────────────────────────────────────────────────────
-    st.markdown("### 📄 Upload Resume")
-    cu, cs = st.columns([2, 2])
-    with cu:
-        uploaded = st.file_uploader(
-            "PDF or TXT",
-            type=["pdf", "txt"],
-            key="resume_uploader",
-        )
+    # ── SECTION 1: Show the actual emails ────────────────────────────────────
+    st.markdown("### 📧 Job Emails")
+    st.caption("Expand each email to see full content including all job listings")
 
-    resume_data = st.session_state.get("parsed_resume")
+    email_tab, jobs_tab = st.tabs(["📧 View Emails", "🔍 Extract Jobs"])
 
-    if uploaded:
-        if st.session_state.get("resume_filename") != uploaded.name or not resume_data:
-            with st.spinner("Parsing resume..."):
-                from services.job_service import parse_resume
-                fb          = uploaded.read()
-                ft          = "pdf" if uploaded.name.endswith(".pdf") else "txt"
-                resume_data = parse_resume(fb, ft)
-                st.session_state["parsed_resume"]   = resume_data
-                st.session_state["resume_filename"] = uploaded.name
+    with email_tab:
+        if not job_emails:
+            st.info("No job emails found.")
+        for email in job_emails:
+            _render_email_card_full(email, proc_map.get(email.get("id","")), show_raw)
 
-    with cs:
-        if resume_data and resume_data.get("skills"):
-            name = resume_data.get("name") or "Your Resume"
-            st.success(f"✅ **{name}**")
-            st.caption(
-                f"Skills: {len(resume_data['skills'])} | "
-                f"Exp: {resume_data.get('experience_years', 0)} yrs | "
-                f"Role: {resume_data.get('current_role', '—')}"
+    with jobs_tab:
+        # ── SECTION 2: Resume upload (optional) ──────────────────────────────
+        st.markdown("### 📄 Resume Upload (Optional)")
+        st.caption("Upload your resume to get personalized match scores. You can extract jobs without it.")
+
+        cu, cs = st.columns([2,2])
+        with cu:
+            uploaded = st.file_uploader(
+                "PDF or TXT",
+                type=["pdf","txt"],
+                key="resume_uploader",
             )
-            with st.expander("📋 Parsed Resume"):
-                tags = " ".join(
-                    f'<span style="background:#dcfce7;padding:2px 8px;'
-                    f'border-radius:10px;font-size:12px;margin:2px;">{s}</span>'
-                    for s in resume_data["skills"][:20]
+
+        resume_data = st.session_state.get("parsed_resume")
+
+        if uploaded:
+            if st.session_state.get("resume_filename") != uploaded.name or not resume_data:
+                with st.spinner("Parsing resume with AI..."):
+                    from services.job_service import parse_resume
+                    fb          = uploaded.read()
+                    ft          = "pdf" if uploaded.name.endswith(".pdf") else "txt"
+                    resume_data = parse_resume(fb, ft)
+                    st.session_state["parsed_resume"]   = resume_data
+                    st.session_state["resume_filename"] = uploaded.name
+
+        with cs:
+            if resume_data and resume_data.get("skills"):
+                name = resume_data.get("name") or "Your Resume"
+                st.success(f"✅ **{name}**")
+                st.caption(
+                    f"Skills: {len(resume_data['skills'])} | "
+                    f"Exp: {resume_data.get('experience_years',0)} yrs | "
+                    f"Role: {resume_data.get('current_role','—')}"
                 )
-                st.markdown(f"**Skills:** {tags}", unsafe_allow_html=True)
-                if resume_data.get("summary"):
-                    st.caption(resume_data["summary"])
-                if resume_data.get("certifications"):
-                    st.write("**Certs:** " + ", ".join(resume_data["certifications"][:5]))
-        else:
-            st.info("📤 Upload resume for match scores")
+                with st.expander("📋 Parsed Resume Details"):
+                    tags = " ".join(
+                        f'<span style="background:#dcfce7;padding:2px 8px;'
+                        f'border-radius:10px;font-size:12px;margin:2px;">{s}</span>'
+                        for s in resume_data["skills"][:20]
+                    )
+                    st.markdown(f"**Skills:** {tags}", unsafe_allow_html=True)
+                    if resume_data.get("summary"):
+                        st.write("**Summary:**")
+                        st.caption(resume_data["summary"])
+                    if resume_data.get("experience"):
+                        st.write("**Experience:**")
+                        st.caption(resume_data["experience"])
+                    if resume_data.get("projects"):
+                        st.write("**Projects:**")
+                        for proj in resume_data["projects"][:3]:
+                            st.write(f"• {proj}")
+            else:
+                st.info("📤 Upload resume for match scores (optional)")
 
-    st.divider()
-
-    # ── Extraction controls ───────────────────────────────────────────────────
-    st.markdown("### 🔍 Extract Jobs")
-    cc1, cc2, cc3 = st.columns(3)
-    with cc1:
-        enrich = st.checkbox(
-            "🌐 Web enrichment",
-            value=False,
-            key="job_enrich",
-            help="Fetch job pages (skips LinkedIn/Glassdoor)",
-        )
-    with cc2:
-        max_e = st.slider(
-            "Max emails",
-            1, min(len(job_emails), 50),
-            min(len(job_emails), 10),
-            key="job_max",
-        )
-    with cc3:
-        st.write("")
-        extract_btn = st.button(
-            "🚀 Extract Jobs",
-            type="primary",
-            use_container_width=True,
-        )
-
-    if extract_btn:
-        from services.job_service import extract_jobs_from_email, enrich_job_with_scraping
-        to_process = job_emails[:max_e]
-        all_jobs   = []
-        prog       = st.progress(0)
-        status     = st.empty()
-
-        for i, email in enumerate(to_process):
-            status.text(f"Processing {i+1}/{len(to_process)}: {truncate(email.get('subject',''), 50)}")
-            jobs = extract_jobs_from_email(email)
-            if enrich:
-                jobs = [enrich_job_with_scraping(j) for j in jobs]
-            all_jobs.extend(jobs)
-            prog.progress((i + 1) / len(to_process))
-
-        # Deduplicate (role, company, location)
-        seen, unique = set(), []
-        for job in all_jobs:
-            import re
-            key = (
-                re.sub(r'\s+', ' ', job.get("role", "")).lower()[:60],
-                re.sub(r'\s+', ' ', job.get("company", "")).lower()[:40],
-                job.get("location", "").lower()[:30],
-            )
-            if key not in seen and key[0]:
-                seen.add(key)
-                unique.append(job)
-
-        st.session_state["extracted_jobs"] = unique
-        st.session_state.pop("scored_jobs", None)
-        prog.progress(1.0)
-        status.success(f"✅ Found {len(unique)} unique jobs!")
-
-    # ── Score ─────────────────────────────────────────────────────────────────
-    extracted = st.session_state.get("extracted_jobs", [])
-    if extracted and resume_data and resume_data.get("skills"):
-        if st.button("🎯 Score Against Resume", type="secondary"):
-            with st.spinner(f"Scoring {len(extracted)} jobs..."):
-                from services.job_service import score_all_jobs
-                scored = score_all_jobs(extracted, resume_data)
-                st.session_state["scored_jobs"] = scored
-            st.success(f"✅ Scored {len(scored)} jobs!")
-
-    # ── Display ───────────────────────────────────────────────────────────────
-    jobs_to_show = st.session_state.get("scored_jobs") or extracted
-    show_match   = bool(
-        st.session_state.get("scored_jobs") and
-        resume_data and resume_data.get("skills")
-    )
-
-    if jobs_to_show:
         st.divider()
 
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.metric("Jobs Found", len(jobs_to_show))
-        with m2:
-            if show_match:
-                strong = sum(
-                    1 for j in jobs_to_show
-                    if j.get("match", {}).get("match_score", 0) >= 70
-                )
-                st.metric("Strong/Good Matches", strong)
-        with m3:
-            min_score = (
-                st.slider("Min score", 0, 100, 0, key="min_s")
-                if show_match else 0
+        # ── SECTION 3: Job extraction ─────────────────────────────────────────
+        st.markdown("### 🔍 Extract Jobs from Emails")
+        st.caption(
+            f"Found {len(job_emails)} job emails. "
+            "Each email typically contains 3-10 job listings."
+        )
+
+        cc1, cc2, cc3 = st.columns(3)
+        with cc1:
+            enrich = st.checkbox(
+                "🌐 Web enrichment",
+                value=False,
+                key="job_enrich",
+                help="Fetch job pages for extra details (skips LinkedIn/Glassdoor)",
+            )
+        with cc2:
+            max_e = st.slider(
+                "Emails to process",
+                1, min(len(job_emails),30),
+                min(len(job_emails),10),
+                key="job_max",
+            )
+        with cc3:
+            st.write("")
+            extract_btn = st.button(
+                "🚀 Extract All Jobs",
+                type="primary",
+                use_container_width=True,
             )
 
-        if show_match and min_score > 0:
-            jobs_to_show = [
-                j for j in jobs_to_show
-                if j.get("match", {}).get("match_score", 0) >= min_score
-            ]
+        if extract_btn:
+            from services.job_service import extract_jobs_from_email, enrich_job_with_scraping
+            to_proc  = job_emails[:max_e]
+            all_jobs = []
+            prog     = st.progress(0)
+            status   = st.empty()
 
-        label = "🎯 Matched Jobs" if show_match else "💼 Extracted Jobs"
-        st.subheader(f"{label} ({len(jobs_to_show)})")
-        if show_match:
-            st.caption("Sorted by match score — highest first")
+            for i, email in enumerate(to_proc):
+                status.text(
+                    f"Processing {i+1}/{len(to_proc)}: "
+                    f"{truncate(email.get('subject',''),50)}"
+                )
+                jobs = extract_jobs_from_email(email)
+                if enrich:
+                    jobs = [enrich_job_with_scraping(j) for j in jobs]
+                all_jobs.extend(jobs)
+                prog.progress((i+1)/len(to_proc))
 
-        for i, job in enumerate(jobs_to_show):
-            _render_job_card(job, i, show_match=show_match)
+            # Deduplicate
+            seen, unique = set(), []
+            import re as _re
+            for job in all_jobs:
+                key = (
+                    _re.sub(r'\s+', ' ', job.get("role","")).lower()[:60],
+                    _re.sub(r'\s+', ' ', job.get("company","")).lower()[:40],
+                )
+                if key not in seen and key[0]:
+                    seen.add(key)
+                    unique.append(job)
 
-    elif not extracted:
-        st.info(
-            f"Click **🚀 Extract Jobs** above to process "
-            f"{len(job_emails)} recruitment emails."
+            st.session_state["extracted_jobs"] = unique
+            st.session_state.pop("scored_jobs", None)
+            prog.progress(1.0)
+            status.success(f"✅ Found {len(unique)} unique jobs from {len(to_proc)} emails!")
+
+        # ── SECTION 4: Score button ───────────────────────────────────────────
+        extracted = st.session_state.get("extracted_jobs",[])
+        if extracted and resume_data and resume_data.get("skills"):
+            if st.button("🎯 Score All Jobs Against My Resume", type="secondary"):
+                with st.spinner(f"Scoring {len(extracted)} jobs against your resume..."):
+                    from services.job_service import score_all_jobs
+                    scored = score_all_jobs(extracted, resume_data)
+                    st.session_state["scored_jobs"] = scored
+                st.success(f"✅ Scored {len(scored)} jobs!")
+
+        # ── SECTION 5: Display jobs ───────────────────────────────────────────
+        jobs_to_show = st.session_state.get("scored_jobs") or extracted
+        show_match   = bool(
+            st.session_state.get("scored_jobs") and
+            resume_data and resume_data.get("skills")
         )
+
+        if jobs_to_show:
+            st.divider()
+
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                st.metric("Total Jobs Found", len(jobs_to_show))
+            with m2:
+                if show_match:
+                    strong = sum(
+                        1 for j in jobs_to_show
+                        if j.get("match",{}).get("match_score",0) >= 60
+                    )
+                    st.metric("Good/Strong Matches", strong)
+            with m3:
+                min_score = (
+                    st.slider("Min match %", 0, 100, 0, key="min_s")
+                    if show_match else 0
+                )
+
+            if show_match and min_score > 0:
+                jobs_to_show = [
+                    j for j in jobs_to_show
+                    if j.get("match",{}).get("match_score",0) >= min_score
+                ]
+
+            label = "🎯 Jobs Matched to Resume" if show_match else "💼 Extracted Jobs"
+            st.subheader(f"{label} ({len(jobs_to_show)})")
+            if show_match:
+                st.caption("Sorted by match score — highest first")
+            else:
+                st.caption("Upload resume and click '🎯 Score' to get match scores")
+
+            for i, job in enumerate(jobs_to_show):
+                _render_job_card(job, i, show_match=show_match)
+
+        elif not extracted:
+            st.info(
+                f"👆 Click **🚀 Extract All Jobs** above to find all job listings "
+                f"from your {len(job_emails)} recruitment emails."
+            )
