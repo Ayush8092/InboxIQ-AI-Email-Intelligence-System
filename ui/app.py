@@ -357,7 +357,8 @@ def main():
 
     # ── Import all tabs ───────────────────────────────────────────────────────
     from ui.inbox_tab        import render_inbox_tab
-    from ui.categorized_tab  import render_categorized_tab   # ← NEW
+    from ui.categorized_tab  import render_categorized_tab   # updated version
+    from ui.job_task_tab     import render_job_task_tab       # NEW TAB
     from ui.dashboard_tab    import render_dashboard_tab
     from ui.timeline_tab     import render_timeline_tab
     from ui.ml_insights_tab  import render_ml_insights_tab
@@ -367,27 +368,30 @@ def main():
     from ui.analytics_tab    import render_analytics_tab
 
     # ── Render tabs ───────────────────────────────────────────────────────────
-    t1, t2, t3, t4, t5, t6, t7, t8, t9 = st.tabs([
+    t1,t2,t3,t4,t5,t6,t7,t8,t9,t10 = st.tabs([
         "📥 Inbox",
-        "📂 Categorized",       # ← NEW
-        "📊 Dashboard",
-        "📅 Timeline",
-        "🤖 ML Insights",
-        "💬 Chat",
-        "✉️ Drafts",
-        "🧠 Prompts",
-        "📈 Analytics",
-    ])
+       "📂 Categorized",
+       "💼 Job Task",       # NEW
+       "📊 Dashboard",
+       "📅 Timeline",
+       "🤖 ML Insights",
+       "💬 Chat",
+       "✉️ Drafts",
+       "🧠 Prompts",
+       "📈 Analytics",
+       ])
 
-    with t1: render_inbox_tab()
-    with t2: render_categorized_tab()    # ← NEW
-    with t3: render_dashboard_tab()
-    with t4: render_timeline_tab()
-    with t5: render_ml_insights_tab()
-    with t6: render_chat_tab()
-    with t7: render_drafts_tab()
-    with t8: render_prompts_tab()
-    with t9: render_analytics_tab()
+
+    with t1:  render_inbox_tab()
+    with t2:  render_categorized_tab()
+    with t3:  render_job_task_tab()      # NEW
+    with t4:  render_dashboard_tab()
+    with t5:  render_timeline_tab()
+    with t6:  render_ml_insights_tab()
+    with t7:  render_chat_tab()
+    with t8:  render_drafts_tab()
+    with t9:  render_prompts_tab()
+    with t10: render_analytics_tab()
 
 
 if __name__ == "__main__":
