@@ -1,19 +1,18 @@
 """
-Categorized Emails Tab — Final version.
-- Shows FULL email content
-- No resume upload (moved to Job Task tab)
-- Handles raw HTML bodies properly
-- Job category shows job emails
+Categorized Emails Tab — Final.
+Uses structure-aware email parsing.
+Shows full email content properly.
+Job category shows all job emails.
 """
 import streamlit as st
 from collections import Counter
 from memory.repository import get_all_emails, get_all_processed
 from utils.helpers import priority_label, truncate
-from utils.email_cleaner import clean_email_body, parse_email_html
+from utils.email_cleaner import parse_email_html, clean_email_body
 
 _JOB_SENDERS = [
     "glassdoor","naukri","linkedin","indeed","monster",
-    "resume.io","jobs@","career@","hiring@",
+    "resume.io","jobs@","career@","hiring@","recruiter",
 ]
 _JOB_CATEGORIES = {
     "Job / Recruitment","Job","job","job_recruitment","Job/Recruitment",
@@ -28,69 +27,108 @@ def _get_source() -> str:
     return "gmail" if st.session_state.get("authenticated") else "demo"
 
 
-def _render_email_body(email: dict, unique_key: str):
-    """Render the full email body with clean text + links."""
+def _render_email_expander(email: dict, uid: str):
+    """
+    Render full email content in an expander.
+    Shows structured job cards if present, otherwise clean text.
+    """
     body = email.get("body","")
     if not body:
-        st.caption("_No email content_")
+        st.caption("_No email content available_")
         return
 
-    parsed = parse_email_html(body)
-    text   = parsed.get("text","")
+    parsed    = parse_email_html(body)
+    text      = parsed.get("text","")
+    job_cards = parsed.get("job_cards",[])
+    all_links = parsed.get("links",[])
+    job_links = parsed.get("job_links",[])
 
-    col_a, col_b = st.columns([4,1])
-    with col_b:
-        show_raw = st.checkbox("Raw HTML", value=False, key=f"raw_{unique_key}")
+    # Toggle
+    show_raw = st.checkbox("Show raw HTML", value=False, key=f"raw_{uid}")
 
-    with col_a:
-        if show_raw:
-            st.text_area(
-                "Raw",
-                value=body[:3000],
-                height=200,
-                disabled=True,
-                key=f"rawb_{unique_key}",
-            )
-        elif text:
-            st.text_area(
-                "Email Content",
-                value=text,
-                height=200,
-                disabled=True,
-                key=f"clean_{unique_key}",
-            )
-        else:
-            # Show raw as last resort
-            st.text_area(
-                "Email body",
-                value=body[:2000],
-                height=200,
-                disabled=True,
-                key=f"fallb_{unique_key}",
-            )
+    if show_raw:
+        st.text_area(
+            "Raw HTML",
+            value=body[:4000],
+            height=250,
+            disabled=True,
+            key=f"rawb_{uid}",
+        )
+        return
+
+    # If we have structured job cards, show them beautifully
+    if job_cards:
+        st.markdown(f"**📋 {len(job_cards)} Jobs in this email:**")
+        for i, card in enumerate(job_cards):
+            with st.container():
+                c1, c2 = st.columns([5,1])
+                with c1:
+                    st.markdown(f"**{i+1}. {card['role']}**")
+                    parts = []
+                    if card.get("company","Unknown") != "Unknown":
+                        parts.append(f"🏢 {card['company']}")
+                    if card.get("location","Not specified") != "Not specified":
+                        parts.append(f"📍 {card['location']}")
+                    if card.get("salary","Not specified") != "Not specified":
+                        parts.append(f"💰 {card['salary']}")
+                    if parts:
+                        st.caption(" | ".join(parts))
+                    if card.get("skills"):
+                        skill_tags = " ".join(
+                            f'<span style="background:#e2e8f0;padding:1px 6px;'
+                            f'border-radius:10px;font-size:11px;">{s}</span>'
+                            for s in card["skills"][:8]
+                        )
+                        st.markdown(skill_tags, unsafe_allow_html=True)
+
+                with c2:
+                    if card.get("link"):
+                        st.markdown(
+                            f'<a href="{card["link"]}" target="_blank">'
+                            f'<button style="background:#4285F4;color:white;'
+                            f'border:none;padding:5px 10px;border-radius:4px;'
+                            f'cursor:pointer;font-size:12px;">Apply</button></a>',
+                            unsafe_allow_html=True,
+                        )
+
+    elif text:
+        # Show clean text
+        st.text_area(
+            "Email Content",
+            value=text,
+            height=250,
+            disabled=True,
+            key=f"clean_{uid}",
+        )
+    else:
+        # Last resort — show raw
+        st.text_area(
+            "Email body",
+            value=body[:3000],
+            height=200,
+            disabled=True,
+            key=f"fb_{uid}",
+        )
 
     # Show job apply links
-    job_links = parsed.get("job_links",[])
-    all_links = parsed.get("links",[])
-    show_links = job_links or all_links[:3]
-
-    if show_links:
+    display_links = job_links or all_links[:3]
+    if display_links:
         ltype = "**🔗 Job Apply Links:**" if job_links else "**🔗 Links:**"
         st.markdown(ltype)
-        for lnk in show_links[:5]:
+        for lnk in display_links[:5]:
             st.markdown(f"- [{lnk[:90]}]({lnk})")
 
 
 def _render_email_card(email: dict, processed: dict | None, idx: int):
-    p        = processed or {}
-    subject  = email.get("subject","(No Subject)")
-    sender   = email.get("sender","")
-    cat      = p.get("category","Not processed")
-    pr       = p.get("priority")
-    task     = p.get("task","")
-    summary  = p.get("summary","")
-    color    = _PRIORITY_COLORS.get(pr,"#9ca3af")
-    uid      = f"{email.get('id','x')[:12]}_{idx}"
+    p       = processed or {}
+    subject = email.get("subject","(No Subject)")
+    sender  = email.get("sender","")
+    cat     = p.get("category","Not processed")
+    pr      = p.get("priority")
+    task    = p.get("task","")
+    summary = p.get("summary","")
+    color   = _PRIORITY_COLORS.get(pr,"#9ca3af")
+    uid     = f"{email.get('id','x')[:12]}_{idx}"
 
     with st.container():
         c1, c2 = st.columns([5,1])
@@ -104,21 +142,21 @@ def _render_email_card(email: dict, processed: dict | None, idx: int):
         with c2:
             if pr:
                 st.markdown(
-                    f'<div style="background:{color};color:white;'
-                    f'border-radius:6px;padding:4px 8px;text-align:center;'
-                    f'font-size:11px;">{priority_label(pr)}</div>',
+                    f'<div style="background:{color};color:white;border-radius:6px;'
+                    f'padding:4px 8px;text-align:center;font-size:11px;">'
+                    f'{priority_label(pr)}</div>',
                     unsafe_allow_html=True,
                 )
 
         with st.expander("📖 View Full Email", expanded=False):
-            _render_email_body(email, uid)
+            _render_email_expander(email, uid)
 
         st.markdown("---")
 
 
 def render_categorized_tab():
     st.header("📂 Categorized Emails")
-    st.caption("Click '📖 View Full Email' on any email to see the complete content")
+    st.caption("Click '📖 View Full Email' on any email to see complete content with job listings")
 
     source      = _get_source()
     emails_list = get_all_emails(source=source)
@@ -136,9 +174,9 @@ def render_categorized_tab():
 
     processed_count = sum(1 for e in emails_list if e["id"] in proc_map)
 
-    # ── Build categories ──────────────────────────────────────────────────────
+    # Build category counts
     cat_counts: Counter = Counter()
-    cat_counts["All"]   = len(emails_list)
+    cat_counts["All"] = len(emails_list)
     for email in emails_list:
         cat = proc_map.get(email["id"],{}).get("category")
         if cat:
@@ -148,23 +186,16 @@ def render_categorized_tab():
         [c for c in cat_counts if c != "All"],
         key=lambda x: -cat_counts[x],
     )
-    labels = {}
-    for c in sorted_cats:
-        cnt = len(emails_list) if c == "All" else cat_counts.get(c,0)
-        labels[c] = f"{c} ({cnt})"
+    labels = {c: f"{c} ({cat_counts.get(c, len(emails_list) if c == 'All' else 0)})" for c in sorted_cats}
+    labels["All"] = f"All ({len(emails_list)})"
 
-    # ── Controls ──────────────────────────────────────────────────────────────
+    # Controls
     c1, c2 = st.columns([3,2])
     with c1:
-        sel_label = st.selectbox(
-            "Filter by Category",
-            list(labels.values()),
-            index=0,
-            key="cat_filter",
-        )
-        sel_cat = next((k for k,v in labels.items() if v == sel_label), "All")
+        sel_label = st.selectbox("Filter by Category", list(labels.values()), index=0, key="cat_filter")
+        sel_cat   = next((k for k,v in labels.items() if v == sel_label), "All")
     with c2:
-        cnt = len(emails_list) if sel_cat == "All" else cat_counts.get(sel_cat,0)
+        cnt = len(emails_list) if sel_cat == "All" else cat_counts.get(sel_cat, 0)
         st.metric("Showing", f"{cnt} emails")
 
     if processed_count == 0:
@@ -173,7 +204,7 @@ def render_categorized_tab():
             "Go to **📥 Inbox** and click **🚀 Process Emails** first."
         )
 
-    # ── Distribution ─────────────────────────────────────────────────────────
+    # Distribution chart
     with st.expander("📊 Category Distribution", expanded=False):
         total = max(processed_count, 1)
         for cat, n in sorted(cat_counts.items(), key=lambda x: -x[1]):
@@ -186,31 +217,30 @@ def render_categorized_tab():
 
     st.divider()
 
-    # ── Filter ────────────────────────────────────────────────────────────────
+    # Filter emails
     if sel_cat == "All":
         filtered = emails_list
     else:
-        # Primary: by processed category
         filtered = [
             e for e in emails_list
             if proc_map.get(e["id"],{}).get("category") == sel_cat
         ]
-        # Fallback for job category: also match by sender
+        # Fallback for job category: also match by sender domain
         if not filtered and sel_cat in _JOB_CATEGORIES:
             filtered = [
                 e for e in emails_list
                 if any(js in e.get("sender","").lower() for js in _JOB_SENDERS)
             ]
-        # If still nothing, show all emails for that category name
+        # Last fallback: case-insensitive match
         if not filtered:
-            filtered = [
+            sel_lower = sel_cat.lower().replace(" / ","/").replace(" ","_")
+            filtered  = [
                 e for e in emails_list
-                if proc_map.get(e["id"],{}).get("category","").lower() ==
-                   sel_cat.lower().replace(" / ","/").replace("/","_")
+                if proc_map.get(e["id"],{}).get("category","").lower().replace(" / ","/").replace(" ","_") == sel_lower
             ]
 
     if not filtered:
-        st.info(f"No emails in '{sel_cat}'.")
+        st.info(f"No emails found in '{sel_cat}'.")
         return
 
     lbl = "All Emails" if sel_cat == "All" else sel_cat
