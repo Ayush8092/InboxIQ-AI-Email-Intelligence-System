@@ -1,82 +1,206 @@
 """
-Production Email Cleaner — Structure-Aware DOM Parsing.
+Production Email Cleaner — Intent-Driven, Structure-Aware.
 
-Architecture:
-  HTML → DOM traversal → job cards (structured) + clean text
-  NOT: HTML → soup.get_text() → noisy text
+Architecture (as described in the analysis):
+  OLD (broken): HTML → soup.get_text() → noisy flat text → broken regex
+  NEW (correct): HTML → noise removal → anchor-based intent detection
+                 → limited context window per job card → structured JSON
 
-Key design:
-- Use soup.strings to get text nodes in order (respects <br> separators)
-- Extract job cards by finding <a> tags with job-title text
-- Parse context from parent <td>.strings — gives company/location/salary/skills in order
-- Build readable display text from structured job cards
+Key fixes:
+1. Data ingestion: extract_html_from_payload() walks Gmail payload recursively
+   to find the ACTUAL text/html part (not just root body.data)
+2. Noise removal: remove script/style/noscript/link/img BEFORE parsing
+3. Intent anchors: find <a> tags with job titles (high-confidence signals)
+4. Limited context window: use parent <td>.strings ONLY (not entire ancestor tree)
+5. Fixed company/location bug: strict city regex prevents company names
+   containing "(India)" from being parsed as locations
+6. Invisible unicode cleaned before parsing
 """
 import re
+import base64
 from urllib.parse import urlparse
 from utils.secure_logger import get_secure_logger
 
 logger = get_secure_logger(__name__)
 
-_JOB_DOMAINS = {
-    "glassdoor.com","glassdoor.co.in","naukri.com","linkedin.com",
-    "indeed.com","monster.com","shine.com","foundit.in","instahyre.com",
-    "unstop.com","internshala.com","wellfound.com","cutshort.io",
-    "hirist.tech","apna.co","timesjobs.com","careerbuilder.com",
-    "ziprecruiter.com","greenhouse.io","lever.co","ashbyhq.com",
-    "workable.com","jobs.google.com","simplyhired.com",
-}
+# ── Regex patterns ─────────────────────────────────────────────────────────────
 
-_SKIP_LINK_PATTERNS = re.compile(
-    r'manage.settings|unsubscribe|privacy|terms.of|help.center|'
-    r'contact.us|about.us|brand.views|tracking|pixel|logomark',
-    re.IGNORECASE
+_INVISIBLE = re.compile(
+    r'[\u200b\u200c\u200d\ufeff\u00ad\u00a0\xa0\u2028\u2029\u3000\u200e\u200f]'
 )
 
 _JOB_TITLE_RE = re.compile(
-    r'\b(engineer|developer|analyst|scientist|manager|intern|designer|'
-    r'architect|lead|senior|junior|associate|consultant|specialist|'
-    r'director|coordinator|fullstack|full.stack|frontend|backend|devops|'
-    r'sde|swe|data|ml|ai|software|machine.learning|generative|applied|'
-    r'research|product|cloud|security|nlp|computer.vision)\b',
+    r'\b(engineer|developer|analyst|scientist|manager|intern|designer|architect|'
+    r'lead|senior|junior|associate|consultant|specialist|director|coordinator|'
+    r'fullstack|full.stack|frontend|backend|devops|sde|swe|data|ml|ai|software|'
+    r'machine.learning|generative|applied|research|product|cloud|security|nlp|'
+    r'computer.vision|program.manager|technical)\b',
     re.IGNORECASE
 )
 
-_STAR_RE     = re.compile(r'\s*\d+\.\d+\s*[★☆\*\u2605\u2606]?\s*$')
-_SALARY_RE   = re.compile(
-    r'[₹$€£]?\s*\d+[KkLl]?\s*[-–]\s*[₹$€£]?\s*\d+[KkLl]?'
-    r'(?:\s*\([^)]{0,40}\))?',
+# Strict location: line IS a location (not contains location as part of company name)
+_LOCATION_STRICT = re.compile(
+    r'^(bangalore|bengaluru|mumbai|delhi(?:\s+ncr)?|hyderabad|chennai|pune|kolkata|'
+    r'noida|gurgaon|gurugram|ahmedabad|jaipur|kochi|indore|lucknow|bhopal|nagpur|'
+    r'surat|india|remote|work\s+from\s+home|wfh|onsite|on-site|hybrid)\s*'
+    r'(?:[,\|•]\s*(?:full.time|part.time|contract|remote|india))?$',
     re.IGNORECASE
 )
-_CITIES_RE   = re.compile(
+# Loose location: short line containing a city
+_LOCATION_LOOSE = re.compile(
     r'\b(bangalore|bengaluru|mumbai|delhi|hyderabad|chennai|pune|kolkata|'
-    r'noida|gurgaon|gurugram|ahmedabad|jaipur|kochi|indore|lucknow|bhopal|'
-    r'nagpur|surat|india|remote|work\s+from\s+home|wfh|hybrid|onsite)\b',
+    r'noida|gurgaon|gurugram|india|remote|hybrid)\b',
     re.IGNORECASE
 )
+# Indicators that a line is a company name (prevents misclassification)
+_COMPANY_INDICATORS = re.compile(
+    r'\d+\.\d+|pvt|ltd|inc|llc|corp|technologies|services|solutions|systems|'
+    r'consulting|ventures|industries|associates|group|global|international',
+    re.IGNORECASE
+)
+
+_SALARY_RE = re.compile(
+    r'[₹$€£]?\s*\d+[KkLlM]?\s*[-–—]\s*[₹$€£]?\s*\d+[KkLlM]?'
+    r'(?:\s*\(?(?:Employer|Glassdoor|Company)\s+Est\.?\)?)?',
+    re.IGNORECASE
+)
+# Also match "X LPA" format
+_SALARY_LPA = re.compile(r'\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*(?:LPA|lpa|lac|lakh)', re.IGNORECASE)
+
+_STAR_RATING = re.compile(r'\s*\d+\.\d+\s*[★☆\u2605\u2606\u2B50⭐✦]?\s*$')
+
 _SKILL_DELIM = re.compile(r'[•·,;|]')
-_INVISIBLE   = re.compile(r'[\u200b\u200c\u200d\ufeff\u00ad\u00a0\u2028\u2029\xa0]')
-_NOISE_TEXT  = re.compile(
-    r'(unsubscribe|manage\s+settings|privacy\s+policy|terms\s+of|'
-    r'this\s+message\s+was\s+sent|you\s+are\s+receiving|if\s+you\s+cannot|'
-    r'view\s+in\s+browser|click\s+here\s+to|©\s*\d{4}|all\s+rights\s+reserved|'
-    r'add\s+.*to\s+your\s+address|do\s+not\s+reply)',
+
+_NOISE_TEXT = re.compile(
+    r'(unsubscribe|manage\s+settings|privacy\s+policy|terms\s+of\s+use|'
+    r'click\s+here|view\s+in\s+browser|if\s+you\s+cannot\s+view|'
+    r'©\s*\d{4}|all\s+rights\s+reserved|do\s+not\s+reply|'
+    r'this\s+message\s+was\s+sent|you\s+are\s+receiving|'
+    r'add.*to\s+your\s+address|please\s+do\s+not\s+reply)',
     re.IGNORECASE
 )
+
+_SKIP_LINK = re.compile(
+    r'manage.settings|unsubscribe|privacy|terms.of|help.center|'
+    r'contact.us|about.us|brand.view|tracking|pixel|logomark|'
+    r'logo\.png|icon\.png|gif$',
+    re.IGNORECASE
+)
+
+_JOB_DOMAINS = {
+    "glassdoor.com","glassdoor.co.in","naukri.com","linkedin.com","indeed.com",
+    "monster.com","shine.com","foundit.in","instahyre.com","unstop.com",
+    "internshala.com","wellfound.com","cutshort.io","hirist.tech","apna.co",
+    "timesjobs.com","careerbuilder.com","ziprecruiter.com","greenhouse.io",
+    "lever.co","ashbyhq.com","workable.com","jobs.google.com","simplyhired.com",
+}
 
 _EMPLOYMENT_TYPES = {
-    'full-time','part-time','contract','freelance','permanent',
-    'temporary','fixed-term','full time','part time','apprenticeship',
+    'full-time','part-time','contract','freelance','permanent','temporary',
+    'fixed-term','full time','part time','apprenticeship','internship',
+    'casual','seasonal',
 }
 
 
-def _clean(text: str) -> str:
-    """Remove invisible chars, normalize whitespace."""
-    text = _INVISIBLE.sub(' ', text)
-    return re.sub(r'\s+', ' ', text).strip()
+# ── Data ingestion: Gmail payload extraction ───────────────────────────────────
+
+def extract_html_from_payload(payload: dict) -> str:
+    """
+    Recursively walk Gmail API message payload to find the text/html part.
+
+    Gmail returns messages as nested MIME structures:
+      multipart/mixed
+        multipart/alternative
+          text/plain   <- plain text version
+          text/html    <- HTML version (what we want)
+        image/png      <- inline images
+
+    This function handles all nesting depths and always returns
+    the complete, undecoded HTML body.
+
+    Args:
+        payload: Gmail API message['payload'] dict
+
+    Returns:
+        Full HTML string, or empty string if not found.
+    """
+    mime_type = payload.get('mimeType', '')
+    parts     = payload.get('parts', [])
+
+    # This part IS the HTML — decode and return it
+    if mime_type == 'text/html':
+        data = payload.get('body', {}).get('data', '')
+        if data:
+            try:
+                return base64.urlsafe_b64decode(data + '==').decode('utf-8', errors='replace')
+            except Exception as e:
+                logger.warning(f"Base64 decode failed: {type(e).__name__}")
+        return ''
+
+    # Multipart — recurse into child parts, preferring HTML over plain
+    if parts:
+        html_parts  = []
+        plain_parts = []
+
+        for part in parts:
+            result = extract_html_from_payload(part)
+            if result:
+                part_mime = part.get('mimeType', '')
+                if part_mime == 'text/html' or '<html' in result.lower()[:100]:
+                    html_parts.append(result)
+                else:
+                    plain_parts.append(result)
+
+        if html_parts:
+            return '\n'.join(html_parts)
+        if plain_parts:
+            return '\n'.join(plain_parts)
+
+    # Fallback: root body has data (single-part message)
+    if mime_type == 'text/plain':
+        data = payload.get('body', {}).get('data', '')
+        if data:
+            try:
+                return base64.urlsafe_b64decode(data + '==').decode('utf-8', errors='replace')
+            except Exception:
+                pass
+
+    return ''
+
+
+# ── Text utilities ─────────────────────────────────────────────────────────────
+
+def _clean(s: str) -> str:
+    """Remove invisible unicode and normalize whitespace."""
+    s = _INVISIBLE.sub(' ', s)
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+def _is_location(line: str) -> bool:
+    """
+    Check if a line represents a location.
+    Uses strict match to avoid misclassifying company names like
+    'Terrier Security Services (India)' as locations.
+    """
+    stripped = line.strip()
+    # Strict: the ENTIRE line is a location
+    if _LOCATION_STRICT.match(stripped):
+        return True
+    # Loose: short line with city AND no company indicators
+    if (len(stripped) < 40 and
+        _LOCATION_LOOSE.search(stripped) and
+        not _COMPANY_INDICATORS.search(stripped)):
+        return True
+    return False
+
+
+def _is_salary(line: str) -> bool:
+    """Check if line contains salary information."""
+    return bool(_SALARY_RE.search(line) or _SALARY_LPA.search(line))
 
 
 def _is_noise_link(href: str) -> bool:
-    return bool(_SKIP_LINK_PATTERNS.search(href))
+    return bool(_SKIP_LINK.search(href))
 
 
 def _is_job_link(href: str) -> bool:
@@ -94,93 +218,89 @@ def _is_job_link(href: str) -> bool:
     ))
 
 
-def _get_td_strings(td_tag) -> list[str]:
-    """
-    Get all text strings from a <td> in order.
-    Uses .strings which respects <br> line breaks.
-    Filters out invisible/empty strings.
-    """
-    lines = []
-    for s in td_tag.strings:
-        txt = _clean(str(s))
-        if not txt or len(txt) <= 1:
-            continue
-        if _NOISE_TEXT.search(txt):
-            continue
-        if re.match(r'^https?://', txt) and len(txt) > 80:
-            continue
-        lines.append(txt)
-    return lines
+# ── Context window parser ──────────────────────────────────────────────────────
 
-
-def _parse_job_context(title: str, context_lines: list[str]) -> dict:
+def _parse_context_window(title: str, strings: list[str]) -> dict:
     """
-    Parse ordered context lines from job card <td> into structured fields.
-    Order in Glassdoor emails: title → company (with rating) → location → salary → skills
-    """
-    title_lower = title.lower()
-    lines = [l for l in context_lines if l.lower() != title_lower and len(l) > 1]
+    Parse an ordered list of text strings from a job card's limited context window.
 
-    company  = "Unknown"
-    location = "Not specified"
-    salary   = "Not specified"
-    skills   = []
+    These strings come from a single parent <td>, in DOM order:
+      [title, company+rating, location, salary, skills•tags, ...]
+
+    Returns structured dict with role/company/location/salary/skills.
+    """
+    title_l  = title.lower()
+    # Filter out the title itself and obvious noise
+    lines = [
+        s for s in strings
+        if s.lower() != title_l
+        and len(s) > 1
+        and not _NOISE_TEXT.search(s)
+        and not (re.match(r'^https?://', s) and len(s) > 60)
+    ]
+
+    company  = 'Unknown'
+    location = 'Not specified'
+    salary   = 'Not specified'
+    skills: list[str] = []
 
     for line in lines:
-        # Salary: contains currency + number range
-        if _SALARY_RE.search(line):
-            salary = line.strip()[:100]
+        # Salary check first (high confidence)
+        if _is_salary(line):
+            if salary == 'Not specified':
+                salary = line.strip()[:100]
             continue
 
-        # Location: short line with city/remote keyword
-        if _CITIES_RE.search(line) and len(line) < 50:
-            m = _CITIES_RE.search(line)
-            location = m.group(0).strip()
+        # Location check (strict to avoid false positives)
+        if _is_location(line):
+            if location == 'Not specified':
+                location = _LOCATION_LOOSE.search(line).group(0).strip()
             continue
 
-        # Skills: line with bullet separators
+        # Skills: line has bullet/comma separators
         if _SKILL_DELIM.search(line):
-            parts = [p.strip() for p in _SKILL_DELIM.split(line) if p.strip()]
-            for p in parts:
-                if (p.lower() not in _EMPLOYMENT_TYPES and
-                    2 <= len(p) <= 50 and
-                    not _SALARY_RE.search(p)):
-                    skills.append(p)
+            for part in _SKILL_DELIM.split(line):
+                part = part.strip()
+                if (part.lower() not in _EMPLOYMENT_TYPES and
+                    2 <= len(part) <= 50 and
+                    not _is_salary(part)):
+                    skills.append(part)
             continue
 
-        # Company: first unmatched line (remove star rating from end)
-        if company == "Unknown" and 2 < len(line) < 100:
-            co = _STAR_RE.sub('', line).strip()
-            # Remove "| India" or "| Remote" suffixes
-            co = re.sub(r'\s*\|\s*(India|Remote|Hybrid).*$', '', co, flags=re.I).strip()
-            # Must not be just a city name
-            if co and len(co) > 2 and not _CITIES_RE.fullmatch(co.lower()):
+        # Company: first unmatched line
+        # Remove star ratings from end (e.g., "Terrier Security 4.5★" → "Terrier Security")
+        if company == 'Unknown' and 2 < len(line) < 100:
+            co = _STAR_RATING.sub('', line).strip()
+            # Remove trailing location suffix (e.g., "Company | India")
+            co = re.sub(r'\s*[|•]\s*(India|Remote|Hybrid).*$', '', co, flags=re.I).strip()
+            if co and len(co) > 2:
                 company = co
 
     return {
-        "role":     title,
-        "company":  company,
-        "location": location,
-        "salary":   salary,
-        "skills":   list(dict.fromkeys(skills))[:15],  # deduplicate
+        'company':  company[:100],
+        'location': location[:80],
+        'salary':   salary[:100],
+        'skills':   list(dict.fromkeys(skills))[:15],  # deduplicated
     }
 
 
-def _extract_job_cards(soup) -> list[dict]:
-    """
-    Extract structured job cards from parsed HTML DOM.
-    
-    Method:
-    1. Find every <a href> whose text looks like a job title
-    2. Climb up to find parent <td>
-    3. Use td.strings to get ordered text lines
-    4. Parse lines into structured fields
-    """
-    job_cards = []
-    seen      = set()
+# ── Intent-driven job card extractor ──────────────────────────────────────────
 
-    for a_tag in soup.find_all("a", href=True):
-        href  = a_tag["href"].strip()
+def _extract_job_cards_from_soup(soup) -> list[dict]:
+    """
+    Intent-driven extraction: anchors are job titles, context is limited window.
+
+    Method:
+    1. Find <a href> tags whose text matches job title patterns
+    2. Validate: exclude noise links, too long/short titles, duplicates
+    3. Limited context: get parent <td>.strings ONLY (not entire ancestor)
+    4. Parse context window into structured fields
+    """
+    job_cards: list[dict] = []
+    seen_titles:  set[str] = set()
+
+    for a_tag in soup.find_all('a', href=True):
+        href  = a_tag['href'].strip()
         title = _clean(a_tag.get_text())
 
         # Validate job title
@@ -190,167 +310,179 @@ def _extract_job_cards(soup) -> list[dict]:
             continue
         if _is_noise_link(href):
             continue
-        if not href.startswith(("http://","https://")):
+        if not href.startswith(('http://', 'https://')):
             continue
 
         title_key = title.lower()
-        if title_key in seen:
+        if title_key in seen_titles:
             continue
-        seen.add(title_key)
+        seen_titles.add(title_key)
 
-        # Find parent <td> (job card container)
-        parent_td = None
-        node      = a_tag.parent
-        for _ in range(8):
-            if node is None:
-                break
-            if node.name == "td":
-                parent_td = node
-                break
-            node = node.parent
+        # Find nearest parent <td> — this is our limited context window
+        parent_td = a_tag.find_parent('td')
 
-        if parent_td is None:
-            # No td found — use direct parent
-            context_lines = [title]
+        if parent_td:
+            # Get strings from THIS td only (not ancestors)
+            raw_strings = [_clean(str(s)) for s in parent_td.strings]
         else:
-            context_lines = _get_td_strings(parent_td)
+            # Fallback: get strings from direct parent element
+            raw_strings = [_clean(str(s)) for s in a_tag.parent.strings]
 
-        if not context_lines:
-            context_lines = [title]
+        # Filter empty and noise strings
+        context = [s for s in raw_strings if s and len(s) > 1 and not _NOISE_TEXT.search(s)]
 
-        # Parse structured fields from context
-        parsed = _parse_job_context(title, context_lines)
-        parsed["link"]      = href
-        parsed["all_links"] = [href]
-        parsed["email_id"]  = ""
-        parsed["email_subject"] = ""
-        parsed["source"]    = "dom_structure"
+        # Parse context window
+        parsed = _parse_context_window(title, context)
 
-        job_cards.append(parsed)
+        job_cards.append({
+            'role':          title,
+            'company':       parsed['company'],
+            'location':      parsed['location'],
+            'salary':        parsed['salary'],
+            'skills':        parsed['skills'],
+            'link':          href,
+            'all_links':     [href],
+            'email_id':      '',
+            'email_subject': '',
+            'source':        'dom_intent',
+        })
 
-    logger.info(f"DOM extraction found {len(job_cards)} job cards")
+    logger.info(f"Intent extraction found {len(job_cards)} job cards")
     return job_cards
 
 
 def _build_display_text(soup, job_cards: list[dict]) -> str:
-    """Build clean readable text for UI display."""
-    lines = []
+    """Build clean human-readable text for email display in UI."""
+    lines: list[str] = []
 
-    # Get email intro/subject text (first few meaningful lines)
-    body = soup.find("body") or soup
-    intro_added = 0
-    for elem in body.children:
-        if not hasattr(elem, 'get_text'):
+    # Get a brief intro (first 2 meaningful lines before job listings)
+    intro_count = 0
+    for tag in (soup.find('body') or soup).children:
+        if not hasattr(tag, 'get_text'):
             continue
-        txt = _clean(elem.get_text(separator=' '))
-        if not txt or len(txt) < 5:
+        txt = _clean(tag.get_text(separator=' '))
+        if not txt or len(txt) < 5 or _NOISE_TEXT.search(txt):
             continue
-        if _NOISE_TEXT.search(txt):
-            continue
-        # Stop at first job title
-        if any(jc["role"].lower() in txt.lower() for jc in job_cards[:1]):
+        # Stop when we reach job content
+        if job_cards and any(jc['role'].lower() in txt.lower() for jc in job_cards[:2]):
             break
         lines.append(txt)
-        intro_added += 1
-        if intro_added >= 2:
+        intro_count += 1
+        if intro_count >= 2:
             break
 
-    if lines:
-        lines.append("")
-
-    # Structured job listing
     if job_cards:
-        lines.append(f"📋 {len(job_cards)} Job Listings:")
-        lines.append("─" * 45)
+        if lines:
+            lines.append('')
+        lines.append(f'📋 {len(job_cards)} Job Listings Found:')
+        lines.append('─' * 45)
         for i, card in enumerate(job_cards, 1):
-            lines.append(f"\n{i}. {card['role']}")
-            if card["company"] != "Unknown":
-                lines.append(f"   🏢 {card['company']}")
-            if card["location"] != "Not specified":
-                lines.append(f"   📍 {card['location']}")
-            if card["salary"] != "Not specified":
-                lines.append(f"   💰 {card['salary']}")
-            if card["skills"]:
-                lines.append(f"   🔧 {', '.join(card['skills'][:8])}")
-            if card["link"]:
-                lines.append(f"   🔗 {card['link'][:90]}")
+            lines.append(f'\n{i}. {card["role"]}')
+            if card['company'] != 'Unknown':
+                lines.append(f'   🏢 {card["company"]}')
+            if card['location'] != 'Not specified':
+                lines.append(f'   📍 {card["location"]}')
+            if card['salary'] != 'Not specified':
+                lines.append(f'   💰 {card["salary"]}')
+            if card['skills']:
+                lines.append(f'   🔧 {", ".join(card["skills"][:8])}')
+            if card['link']:
+                lines.append(f'   🔗 {card["link"][:90]}')
     else:
-        # No job cards — fall back to readable text
-        text = soup.get_text(separator="\n", strip=True)
-        clean_lines = []
-        for line in text.split("\n"):
+        # No job cards — fall back to clean text extraction
+        body_text = soup.get_text(separator='\n', strip=True)
+        for line in body_text.split('\n'):
             line = line.strip()
-            if not line or len(line) <= 1: continue
-            if _NOISE_TEXT.search(line): continue
-            if re.match(r'^https?://', line) and len(line) > 80: continue
+            if not line or len(line) <= 1:
+                continue
+            if _NOISE_TEXT.search(line):
+                continue
+            if re.match(r'^https?://', line) and len(line) > 80:
+                continue
             line = _clean(line)
             if line:
-                clean_lines.append(line)
-        lines.extend(clean_lines)
+                lines.append(line)
 
-    return "\n".join(lines)
+    return '\n'.join(lines)
 
 
-# ── Public API ─────────────────────────────────────────────────────────────────
+# ── Main public API ────────────────────────────────────────────────────────────
 
 def parse_email_html(raw: str) -> dict:
     """
-    Structure-aware email HTML parser.
-    
+    Parse email body (HTML or plain text) into structured output.
+
+    Pipeline:
+    1. Detect if HTML (if not, return cleaned plain text)
+    2. BeautifulSoup parse
+    3. Remove noise: script/style/noscript/link[preload]/img
+    4. Collect all href links
+    5. Intent-driven job card extraction (anchor-based + limited context)
+    6. Build readable display text
+
     Returns:
-      text       : Human-readable text for UI display
-      links      : All href links
-      job_links  : Job-platform links  
-      job_cards  : Structured [{role, company, location, salary, skills, link}]
-      is_html    : Whether input was HTML
+        text      : Clean readable text for UI display
+        links     : All href links found
+        job_links : Job-platform specific links
+        job_cards : Structured [{role, company, location, salary, skills, link}]
+        is_html   : Whether input was HTML
     """
     if not raw:
-        return {"text":"","links":[],"job_links":[],"job_cards":[],"is_html":False}
+        return {'text': '', 'links': [], 'job_links': [], 'job_cards': [], 'is_html': False}
+
+    # Clean invisible unicode before detection
+    raw = _INVISIBLE.sub(' ', raw)
 
     is_html = bool(re.search(
-        r"<(?:html|body|div|span|table|td|p|a)\b", raw, re.IGNORECASE
+        r'<(?:html|body|div|span|table|td|p|a)\b', raw, re.IGNORECASE
     ))
 
     if not is_html:
-        text  = _clean(raw)
+        text  = re.sub(r'\s+', ' ', raw).strip()
         text  = re.sub(r'\n{3,}', '\n\n', text)
         links = re.findall(r'https?://[^\s<>"\']{10,300}', text)
         return {
-            "text":      text[:6000],
-            "links":     list(dict.fromkeys(links))[:20],
-            "job_links": [],
-            "job_cards": [],
-            "is_html":   False,
+            'text':      text[:6000],
+            'links':     list(dict.fromkeys(links))[:20],
+            'job_links': [],
+            'job_cards': [],
+            'is_html':   False,
         }
 
+    # Parse with BeautifulSoup
     try:
         from bs4 import BeautifulSoup
     except ImportError:
-        return _stdlib_parse(raw)
+        return _stdlib_fallback(raw)
 
-    soup = BeautifulSoup(raw, "html.parser")
+    soup = BeautifulSoup(raw, 'html.parser')
 
-    # ── Phase 1: Remove pure noise (no content value) ─────────────────────────
-    for tag in soup(["script","style","noscript","meta"]):
+    # ── Phase 1: Remove pure noise (no content value) ────────────────────────
+    # script, style, noscript: executable/styling noise
+    for tag in soup(['script', 'style', 'noscript', 'meta']):
         tag.decompose()
-    # Remove preload <link> tags (just asset hints, not content)
-    for lt in soup.find_all("link"):
+    # <link rel="preload"> tags: asset hints, zero content value
+    for lt in soup.find_all('link'):
         lt.decompose()
-    # Replace images with alt text (or remove if no alt)
-    for img in soup.find_all("img"):
-        alt = (img.get("alt","") or img.get("title","")).strip()
-        if alt and 2 < len(alt) < 40:
-            img.replace_with(f"[{alt}]")
+    # Images: replace with alt text if meaningful, else remove entirely
+    for img in soup.find_all('img'):
+        alt = (_clean(img.get('alt', '') or img.get('title', '') or '')).strip()
+        if alt and 2 < len(alt) < 40 and not re.search(r'logo|icon|pixel|banner|track', alt, re.I):
+            img.replace_with(alt)
         else:
             img.decompose()
 
-    # ── Phase 2: Collect all links ────────────────────────────────────────────
-    all_links, job_links = [], []
-    for a in soup.find_all("a", href=True):
-        href = a["href"].strip()
-        if not href.startswith(("http://","https://")): continue
-        if len(href) > 500: continue
-        if _is_noise_link(href): continue
+    # ── Phase 2: Collect all href links ──────────────────────────────────────
+    all_links: list[str] = []
+    job_links: list[str] = []
+    for a in soup.find_all('a', href=True):
+        href = a['href'].strip()
+        if not href.startswith(('http://', 'https://')):
+            continue
+        if len(href) > 500:
+            continue
+        if _is_noise_link(href):
+            continue
         all_links.append(href)
         if _is_job_link(href):
             job_links.append(href)
@@ -358,60 +490,58 @@ def parse_email_html(raw: str) -> dict:
     all_links = list(dict.fromkeys(all_links))[:40]
     job_links = list(dict.fromkeys(job_links))[:15]
 
-    # ── Phase 3: Structured DOM extraction ───────────────────────────────────
-    job_cards = _extract_job_cards(soup)
-
-    # Attach email info placeholder (filled by caller)
-    for card in job_cards:
-        if "email_id" not in card:
-            card["email_id"]      = ""
-            card["email_subject"] = ""
+    # ── Phase 3: Intent-driven job card extraction ────────────────────────────
+    job_cards = _extract_job_cards_from_soup(soup)
 
     # ── Phase 4: Build readable display text ─────────────────────────────────
     text = _build_display_text(soup, job_cards)
 
     return {
-        "text":      text[:8000],
-        "links":     all_links,
-        "job_links": job_links,
-        "job_cards": job_cards,
-        "is_html":   True,
+        'text':      text[:8000],
+        'links':     all_links,
+        'job_links': job_links,
+        'job_cards': job_cards,
+        'is_html':   True,
     }
 
 
-def _stdlib_parse(raw: str) -> dict:
-    """Fallback parser using stdlib HTMLParser."""
+def _stdlib_fallback(raw: str) -> dict:
+    """Fallback parser when BeautifulSoup is unavailable."""
     from html.parser import HTMLParser
 
     class _P(HTMLParser):
         def __init__(self):
             super().__init__(convert_charrefs=True)
-            self.parts, self.links = [], []
+            self.parts: list[str] = []
+            self.links: list[str] = []
             self._skip = 0
 
         def handle_starttag(self, tag, attrs):
             t = tag.lower()
-            if t in ("script","style","noscript"): self._skip += 1; return
-            if self._skip: return
-            if t == "a":
-                h = dict(attrs).get("href","")
-                if h.startswith(("http://","https://")) and not _is_noise_link(h):
+            if t in ('script', 'style', 'noscript'):
+                self._skip += 1
+                return
+            if self._skip:
+                return
+            if t == 'a':
+                h = dict(attrs).get('href', '')
+                if h.startswith(('http://', 'https://')) and not _is_noise_link(h):
                     self.links.append(h)
-            if t in ("br","p","div","tr","li","h1","h2","h3","h4","td"):
-                self.parts.append("\n")
+            if t in ('br', 'p', 'div', 'tr', 'li', 'h1', 'h2', 'h3', 'h4', 'td'):
+                self.parts.append('\n')
 
         def handle_endtag(self, tag):
-            if tag.lower() in ("script","style","noscript") and self._skip > 0:
+            if tag.lower() in ('script', 'style', 'noscript') and self._skip > 0:
                 self._skip -= 1
 
         def handle_data(self, data):
             if not self._skip:
-                txt = _clean(data)
-                if txt and not _NOISE_TEXT.search(txt):
-                    self.parts.append(txt)
+                t = _clean(data)
+                if t and not _NOISE_TEXT.search(t):
+                    self.parts.append(t)
 
-        def get_text(self):
-            return re.sub(r'\n{3,}','\n\n',"\n".join(self.parts)).strip()
+        def get_text(self) -> str:
+            return re.sub(r'\n{3,}', '\n\n', '\n'.join(self.parts)).strip()
 
     p = _P()
     try:
@@ -419,31 +549,32 @@ def _stdlib_parse(raw: str) -> dict:
         text   = p.get_text()
         links  = list(dict.fromkeys(p.links))[:40]
         jlinks = [l for l in links if _is_job_link(l)]
-        return {"text":text[:8000],"links":links,"job_links":jlinks,"job_cards":[],"is_html":True}
+        return {'text': text[:8000], 'links': links, 'job_links': jlinks, 'job_cards': [], 'is_html': True}
     except Exception:
-        text = re.sub(r'<[^>]+',' ',raw)
-        return {"text":text[:6000],"links":[],"job_links":[],"job_cards":[],"is_html":True}
+        text = re.sub(r'<[^>]+>', ' ', raw)
+        return {'text': text[:6000], 'links': [], 'job_links': [], 'job_cards': [], 'is_html': True}
 
+
+# ── Convenience functions ──────────────────────────────────────────────────────
 
 def clean_email_body(body: str, max_chars: int = 6000) -> str:
     """Get clean readable text from email body."""
     if not body:
-        return ""
-    result = parse_email_html(body)
-    return result["text"][:max_chars]
+        return ''
+    return parse_email_html(body)['text'][:max_chars]
 
 
 def extract_job_cards(body: str) -> list[dict]:
     """Extract structured job cards from email HTML."""
     if not body:
         return []
-    return parse_email_html(body).get("job_cards", [])
+    return parse_email_html(body).get('job_cards', [])
 
 
 def extract_links_from_email(body: str) -> dict:
     result = parse_email_html(body)
-    return {"all_links": result["links"], "job_links": result["job_links"]}
+    return {'all_links': result['links'], 'job_links': result['job_links']}
 
 
 def is_html(text: str) -> bool:
-    return bool(re.search(r"<(?:html|body|div|span|p|a|table)\b", text, re.IGNORECASE))
+    return bool(re.search(r'<(?:html|body|div|span|p|a|table)\b', text, re.IGNORECASE))

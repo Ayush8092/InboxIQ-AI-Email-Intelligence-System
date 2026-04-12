@@ -4,6 +4,12 @@ Gmail OAuth with:
 - Email count parameter
 - Optional OCR on image attachments
 """
+"""
+Gmail OAuth with:
+- Source tagging (source='gmail')
+- Email count parameter
+- Optional OCR on image attachments
+"""
 import re
 import secrets
 import time
@@ -12,6 +18,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from email.utils import parsedate_to_datetime
 from utils.secure_logger import get_secure_logger
+from utils.email_cleaner import extract_html_from_payload  # ✅ ADDED
 from utils.encryption import encrypt_token, decrypt_token
 from utils.helpers import utcnow_iso
 
@@ -162,46 +169,42 @@ def get_user_info(access_token: str) -> dict | None:
         logger.error(f"User info failed: {type(e).__name__}")
         return None
 
-
+# ✅ REPLACED FUNCTION
 def _decode_body(payload: dict) -> str:
-    body = ""
-    if "parts" in payload:
-        for part in payload["parts"]:
-            if part.get("mimeType") == "text/plain":
-                data = part.get("body",{}).get("data","")
-                if data:
-                    body = base64.urlsafe_b64decode(
-                        data + "=="
-                    ).decode("utf-8", errors="replace")
-                    break
-            elif "parts" in part:
-                body = _decode_body(part)
-                if body:
-                    break
-    else:
-        data = payload.get("body",{}).get("data","")
-        if data:
-            body = base64.urlsafe_b64decode(
-                data + "=="
-            ).decode("utf-8", errors="replace")
-    return body.strip()
+    """
+    FIXED: Extract email body from Gmail payload.
 
+    Uses extract_html_from_payload() which recursively walks
+    ALL MIME parts to find the complete text/html content.
+    """
+    html = extract_html_from_payload(payload)
+    if html:
+        return html
 
+    # Fallback
+    data = payload.get('body', {}).get('data', '')
+    if data:
+        try:
+            return base64.urlsafe_b64decode(data + '==').decode('utf-8', errors='replace')
+        except Exception:
+            pass
+
+    return ''
+
+# ✅ REPLACED FUNCTION
 def _parse_message(data: dict, run_ocr: bool = False) -> dict | None:
-    """
-    Parse Gmail message into AEOA email dict.
-    Always tags source='gmail'.
-    Optionally runs OCR on image attachments.
-    """
     try:
-        hdrs     = data.get("payload",{}).get("headers",[])
+        hdrs     = data.get('payload', {}).get('headers', [])
         get_h    = lambda n: next(
-            (h["value"] for h in hdrs if h["name"].lower() == n.lower()), ""
+            (h['value'] for h in hdrs if h['name'].lower() == n.lower()), ''
         )
-        subject      = get_h("Subject") or "(No Subject)"
-        sender       = get_h("From") or "unknown@unknown.com"
-        date_str     = get_h("Date") or ""
-        body         = _decode_body(data.get("payload",{}))
+        subject      = get_h('Subject') or '(No Subject)'
+        sender       = get_h('From') or 'unknown@unknown.com'
+        date_str     = get_h('Date') or ''
+
+        payload      = data.get('payload', {})
+        body         = _decode_body(payload)
+
         m            = re.search(r'<(.+?)>', sender)
         sender_email = m.group(1) if m else sender
 
@@ -210,30 +213,24 @@ def _parse_message(data: dict, run_ocr: bool = False) -> dict | None:
         except Exception:
             ts = utcnow_iso()
 
-        # Optional OCR on image attachments
-        if run_ocr:
+        if run_ocr and body:
             try:
                 from services.ocr_service import process_email_attachments_ocr
-                body = process_email_attachments_ocr(
-                    body,
-                    gmail_payload=data.get("payload",{}),
-                )
-            except Exception as e:
-                logger.warning(f"OCR failed for {data.get('id')}: {type(e).__name__}")
+                body = process_email_attachments_ocr(body, gmail_payload=payload)
+            except Exception:
+                pass
 
         return {
-            "id":        f"gmail_{data.get('id','')}",
-            "subject":   subject[:200],
-            "body":      body[:3000],
-            "sender":    sender_email,
-            "timestamp": ts,
-            "source":    "gmail",   # ← always tag as gmail
+            'id':        f"gmail_{data.get('id', '')}",
+            'subject':   subject[:200],
+            'body':      body,
+            'sender':    sender_email,
+            'timestamp': ts,
+            'source':    'gmail',
         }
     except Exception as e:
-        logger.warning(f"Message parse failed: {type(e).__name__}")
+        get_secure_logger(__name__).warning(f'Message parse failed: {type(e).__name__}')
         return None
-
-
 def _fetch_single_with_retry(
     msg_id: str,
     headers: dict,
