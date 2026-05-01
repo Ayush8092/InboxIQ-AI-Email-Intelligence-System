@@ -21,15 +21,15 @@ InboxIQ solves this by connecting directly to Gmail and running every email thro
 
 | Feature | Description |
 
-**Auto-Categorization** - Classifies every email into 9 categories (Job, Finance, Newsletter, Action Required, etc.) using a 4-layer hybrid pipeline |
-**Priority Scoring** - Scores each email 1–7 using a trained ML model with 10 engineered features |
-**Task Extraction** - Pulls out actionable tasks with deadlines from email content |
-**Reply Drafts** - Generates context-aware, ready-to-send reply drafts |
-**Smart Summaries** - One-line summaries for every email |
-**Job Intelligence** - Extracts all job listings from recruitment emails + matches against your resume |
-**Resume Matching** - Section-aware resume parsing + semantic job-fit scoring with skill gap analysis |
-**Online Learning** - ML model updates in real time from your feedback — gets smarter as you use it |
-**Analytics Dashboard** - Category trends, priority distribution, cache hit rates, drift detection |
+**Auto-Categorization** - Classifies every email into 9 categories (Job, Finance, Newsletter, Action Required, etc.) using a 4-layer hybrid pipeline |     
+**Priority Scoring** - Scores each email 1–7 using a trained ML model with 10 engineered features |     
+**Task Extraction** - Pulls out actionable tasks with deadlines from email content |     
+**Reply Drafts** - Generates context-aware, ready-to-send reply drafts |     
+**Smart Summaries** - One-line summaries for every email |     
+**Job Intelligence** - Extracts all job listings from recruitment emails + matches against your resume |     
+**Resume Matching** - Section-aware resume parsing + semantic job-fit scoring with skill gap analysis |     
+**Online Learning** - ML model updates in real time from your feedback — gets smarter as you use it |     
+**Analytics Dashboard** - Category trends, priority distribution, cache hit rates, drift detection |     
 
 ---
 
