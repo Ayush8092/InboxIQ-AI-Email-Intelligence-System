@@ -35,37 +35,10 @@ InboxIQ solves this by connecting directly to Gmail and running every email thro
 
 ## Architecture
 
-```
-Gmail OAuth
-     │
-     ▼
-┌─────────────────────────────────────────────────────┐
-│                  Processing Pipeline                  │
-│                                                       │
-│  Raw Email HTML                                       │
-│       │                                               │
-│       ▼                                               │
-│  DOM Parser (BeautifulSoup)                           │
-│  Intent-Driven Extraction                             │
-│       │                                               │
-│       ├──► Categorization (Rules → LLM → Heuristic)  │
-│       ├──► Priority Scoring (scikit-learn ML Model)   │
-│       ├──► Task Extraction (LLM)                      │
-│       ├──► Summary Generation (LLM)                   │
-│       ├──► Reply Draft (LLM)                          │
-│       └──► Job Card Extraction (DOM Structure)        │
-│                                                       │
-└─────────────────────────────────────────────────────┘
-     │
-     ▼
-┌──────────────┐    ┌──────────────┐
-│  FastAPI     │    │  Streamlit   │
-│  REST API    │◄──►│  Dashboard   │
-│  (Port 8000) │    │  (9 Tabs)    │
-└──────────────┘    └──────────────┘
-```
+<div align="center">
+  <img src="Architecture_2.svg" alt="InboxIQ Architecture Diagram" width="900"/>
+</div>
 
----
 
 ## Tech Stack
 
