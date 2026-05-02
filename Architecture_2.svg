@@ -1,0 +1,193 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 660" width="720" height="660" font-family="'Segoe UI', Arial, sans-serif">
+
+  <!-- ── Background ── -->
+  <rect width="720" height="660" fill="#ffffff" rx="12"/>
+
+  <!-- ── Definitions ── -->
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#555" stroke-width="1.5"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrw" viewBox="0 0 10 10" refX="9" refY="5"
+            markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="#888" stroke-width="1.5"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- ══════════════════════════════════════════════════════
+       ROW 1 — Gmail API   y=28  h=52  cx=360  w=290
+       ══════════════════════════════════════════════════════ -->
+  <rect x="215" y="28" width="290" height="52" rx="8"
+        fill="#1a2a4a" stroke="#3b7dd8" stroke-width="1.5"/>
+  <text x="360" y="49" text-anchor="middle"
+        font-size="14" font-weight="700" fill="#ffffff">Gmail API</text>
+  <text x="360" y="67" text-anchor="middle"
+        font-size="11" fill="#8ab4f8">OAuth 2.0  ·  MIME walk  ·  base64 decode</text>
+
+  <!-- arrow 1 -->
+  <line x1="360" y1="80" x2="360" y2="108"
+        stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ══════════════════════════════════════════════════════
+       ROW 2 — HTML Parser   y=110  h=52  cx=360  w=380
+       ══════════════════════════════════════════════════════ -->
+  <rect x="170" y="110" width="380" height="52" rx="8"
+        fill="#1a3a2a" stroke="#34a853" stroke-width="1.5"/>
+  <text x="360" y="131" text-anchor="middle"
+        font-size="14" font-weight="700" fill="#ffffff">Structure-Aware HTML Parser</text>
+  <text x="360" y="149" text-anchor="middle"
+        font-size="11" fill="#81c995">BeautifulSoup  ·  intent-driven DOM  ·  noise removal</text>
+
+  <!-- arrow 2 -->
+  <line x1="360" y1="162" x2="360" y2="190"
+        stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ══════════════════════════════════════════════════════
+       ROW 3 — Pipeline container  y=192  label + box
+       ══════════════════════════════════════════════════════ -->
+  <text x="360" y="205" text-anchor="middle"
+        font-size="10" font-weight="600" fill="#666" letter-spacing="1">AI PROCESSING PIPELINE</text>
+
+  <!-- dashed container  y=212  h=66 -->
+  <rect x="48" y="212" width="624" height="66" rx="8"
+        fill="none" stroke="#444" stroke-width="1" stroke-dasharray="5,4"/>
+
+  <!-- Pipeline box 1: Categorize  x=60  w=141 -->
+  <rect x="60" y="220" width="141" height="50" rx="6"
+        fill="#2a1a4a" stroke="#9b59b6" stroke-width="1.2"/>
+  <text x="130" y="241" text-anchor="middle"
+        font-size="13" font-weight="700" fill="#ffffff">Categorize</text>
+  <text x="130" y="258" text-anchor="middle"
+        font-size="10" fill="#c39bd3">4-layer hybrid</text>
+
+  <!-- Pipeline box 2: Priority Score  x=213  w=141 -->
+  <rect x="213" y="220" width="141" height="50" rx="6"
+        fill="#2a2a1a" stroke="#f39c12" stroke-width="1.2"/>
+  <text x="283" y="241" text-anchor="middle"
+        font-size="13" font-weight="700" fill="#ffffff">Priority Score</text>
+  <text x="283" y="258" text-anchor="middle"
+        font-size="10" fill="#f8c471">scikit-learn ML</text>
+
+  <!-- Pipeline box 3: Task Extraction  x=366  w=141 -->
+  <rect x="366" y="220" width="141" height="50" rx="6"
+        fill="#2a1a1a" stroke="#e74c3c" stroke-width="1.2"/>
+  <text x="436" y="241" text-anchor="middle"
+        font-size="13" font-weight="700" fill="#ffffff">Task Extraction</text>
+  <text x="436" y="258" text-anchor="middle"
+        font-size="10" fill="#f1948a">LLM  ·  deadlines</text>
+
+  <!-- Pipeline box 4: Reply Draft  x=519  w=141 -->
+  <rect x="519" y="220" width="141" height="50" rx="6"
+        fill="#1a2a2a" stroke="#1abc9c" stroke-width="1.2"/>
+  <text x="589" y="241" text-anchor="middle"
+        font-size="13" font-weight="700" fill="#ffffff">Reply Draft</text>
+  <text x="589" y="258" text-anchor="middle"
+        font-size="10" fill="#76d7c4">LLaMA 3.1  ·  Groq</text>
+
+  <!-- Connectors between pipeline boxes -->
+  <line x1="201" y1="245" x2="213" y2="245"
+        stroke="#555" stroke-width="1.2" marker-end="url(#arr)"/>
+  <line x1="354" y1="245" x2="366" y2="245"
+        stroke="#555" stroke-width="1.2" marker-end="url(#arr)"/>
+  <line x1="507" y1="245" x2="519" y2="245"
+        stroke="#555" stroke-width="1.2" marker-end="url(#arr)"/>
+
+  <!-- Online learning note inside container -->
+  <text x="360" y="292" text-anchor="middle"
+        font-size="9" fill="#555">⟳  River online learning  ·  PSI drift detection  ·  real-time model updates from feedback</text>
+
+  <!-- arrow 3 -->
+  <line x1="360" y1="278" x2="360" y2="306"
+        stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ══════════════════════════════════════════════════════
+       ROW 4 — Job Intelligence  y=308  h=52  w=480
+       ══════════════════════════════════════════════════════ -->
+  <rect x="120" y="308" width="480" height="52" rx="8"
+        fill="#1a2a1a" stroke="#27ae60" stroke-width="1.5"/>
+  <text x="360" y="329" text-anchor="middle"
+        font-size="14" font-weight="700" fill="#ffffff">Job Intelligence</text>
+  <text x="360" y="347" text-anchor="middle"
+        font-size="11" fill="#82e0aa">Anchor extraction  ·  resume section parsing  ·  LLM match scoring</text>
+
+  <!-- arrow 4 -->
+  <line x1="360" y1="360" x2="360" y2="388"
+        stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ══════════════════════════════════════════════════════
+       ROW 5 — SQLite  y=390  h=52  w=382
+       ══════════════════════════════════════════════════════ -->
+  <rect x="169" y="390" width="382" height="52" rx="8"
+        fill="#1e1e1e" stroke="#666" stroke-width="1.5"/>
+  <text x="360" y="411" text-anchor="middle"
+        font-size="14" font-weight="700" fill="#ffffff">SQLite Database</text>
+  <text x="360" y="429" text-anchor="middle"
+        font-size="11" fill="#aaa">emails  ·  processed results  ·  ML feedback  ·  models</text>
+
+  <!-- arrow 5 — split into two branches -->
+  <!-- vertical down to split point -->
+  <line x1="360" y1="442" x2="360" y2="462"
+        stroke="#555" stroke-width="1.5"/>
+  <!-- horizontal branch line -->
+  <line x1="204" y1="462" x2="516" y2="462"
+        stroke="#555" stroke-width="1.5"/>
+  <!-- left branch down -->
+  <line x1="204" y1="462" x2="204" y2="480"
+        stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <!-- right branch down -->
+  <line x1="516" y1="462" x2="516" y2="480"
+        stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ══════════════════════════════════════════════════════
+       ROW 6 — FastAPI + Streamlit  y=480  h=52
+       FastAPI: x=64  w=280   Streamlit: x=376  w=280
+       ══════════════════════════════════════════════════════ -->
+
+  <!-- FastAPI box -->
+  <rect x="64" y="480" width="280" height="52" rx="8"
+        fill="#1a2a3a" stroke="#3b7dd8" stroke-width="1.5"/>
+  <text x="204" y="501" text-anchor="middle"
+        font-size="14" font-weight="700" fill="#ffffff">FastAPI Backend</text>
+  <text x="204" y="519" text-anchor="middle"
+        font-size="11" fill="#8ab4f8">JWT auth  ·  RBAC  ·  rate limiting</text>
+
+  <!-- Streamlit box -->
+  <rect x="376" y="480" width="280" height="52" rx="8"
+        fill="#3a1a1a" stroke="#ff4b4b" stroke-width="1.5"/>
+  <text x="516" y="501" text-anchor="middle"
+        font-size="14" font-weight="700" fill="#ffffff">Streamlit Dashboard</text>
+  <text x="516" y="519" text-anchor="middle"
+        font-size="11" fill="#ff9090">9 tabs  ·  job cards  ·  resume matcher</text>
+
+  <!-- arrows from both boxes down to merge line -->
+  <line x1="204" y1="532" x2="204" y2="550"
+        stroke="#555" stroke-width="1.5"/>
+  <line x1="516" y1="532" x2="516" y2="550"
+        stroke="#555" stroke-width="1.5"/>
+  <!-- merge horizontal line -->
+  <line x1="204" y1="550" x2="516" y2="550"
+        stroke="#555" stroke-width="1.5"/>
+  <!-- single arrow down -->
+  <line x1="360" y1="550" x2="360" y2="568"
+        stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- ══════════════════════════════════════════════════════
+       ROW 7 — Render.com  y=570  h=52  w=360
+       ══════════════════════════════════════════════════════ -->
+  <rect x="180" y="570" width="360" height="52" rx="8"
+        fill="#1a3a2a" stroke="#46e3b7" stroke-width="1.5"/>
+  <text x="360" y="591" text-anchor="middle"
+        font-size="14" font-weight="700" fill="#ffffff">Render.com  ·  Free Tier</text>
+  <text x="360" y="609" text-anchor="middle"
+        font-size="11" fill="#81d4c8">inboxiq.onrender.com  ·  FastAPI + Streamlit</text>
+
+  <!-- ══════════════════════════════════════════════════════
+       LEGEND — bottom right
+       ══════════════════════════════════════════════════════ -->
+  <text x="36" y="638" font-size="10" fill="#444">InboxIQ  ·  AI Email Intelligence System</text>
+  <text x="684" y="638" font-size="10" fill="#444" text-anchor="end">github.com/Ayush8092</text>
+
+</svg>
